@@ -2,66 +2,44 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#1F3864">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MAS AMA">
-  <meta name="description" content="App de gestión del programa MAS AMA — CESFAM Félix de Amesti">
   <title>MAS AMA</title>
-
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/styles.css">
-
-  <!-- React & ReactDOM -->
-  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-
-  <!-- SheetJS (Excel read/write) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-  <!-- Babel standalone (JSX → JS, no build step needed) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-
   <style>
-    /* Loading screen */
-    #loading { position:fixed; inset:0; background:#1F3864; display:flex;
-               flex-direction:column; align-items:center; justify-content:center;
-               color:#fff; font-family:'Segoe UI',Arial,sans-serif; z-index:999; }
-    #loading .logo { font-size:56px; margin-bottom:16px; }
-    #loading h2 { font-size:22px; font-weight:800; margin-bottom:6px; }
-    #loading p { font-size:14px; opacity:.7; }
-    #loading .dot-anim { display:inline-block; animation:dots 1.4s infinite; }
-    @keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
+    #splash{position:fixed;inset:0;background:linear-gradient(160deg,#1F3864,#2E75B6);
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            color:#fff;font-family:'Segoe UI',Arial,sans-serif;z-index:9999}
+    #splash .logo{font-size:64px;margin-bottom:16px}
+    #splash h2{font-size:26px;font-weight:900}
+    #splash p{font-size:14px;opacity:.6;margin-top:8px}
+    @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+    .pin-shake{animation:shake .4s ease}
   </style>
 </head>
 <body>
-
-  <!-- Loading screen (shown while scripts load) -->
-  <div id="loading">
+  <div id="splash">
     <div class="logo">🏃</div>
     <h2>MAS AMA</h2>
-    <p>Cargando<span class="dot-anim">...</span></p>
+    <p>Cargando...</p>
   </div>
-
-  <!-- App mount point -->
   <div id="root"></div>
-
-  <!-- App scripts (loaded as Babel/JSX) -->
-  <script type="text/babel" src="/app-data.js"></script>
-  <script type="text/babel" src="/app-components.js"></script>
-  <script type="text/babel" src="/app-views.js"></script>
-  <script type="text/babel" src="/app-shell.js"></script>
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script type="text/babel" src="/app.js"></script>
   <script>
-    // Hide loading screen once React has mounted
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        const l = document.getElementById('loading');
-        if (l) { l.style.opacity = '0'; l.style.transition = 'opacity .3s';
-                 setTimeout(() => l.remove(), 300); }
-      }, 800);
+    window.addEventListener('load',()=>{
+      setTimeout(()=>{
+        const s=document.getElementById('splash');
+        if(s){s.style.opacity='0';s.style.transition='opacity .3s';setTimeout(()=>s.remove(),300);}
+      },800);
     });
   </script>
 </body>
