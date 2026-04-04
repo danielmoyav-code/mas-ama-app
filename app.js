@@ -689,57 +689,114 @@ function ViewPacientes({patients,onPatient,onNuevo}){
   const [search,setSearch]=useState('');
   const [filterTaller,setFT]=useState('');
   const [filterEmpam,setFE]=useState('');
+  const [filterSexo,setFS]=useState('');
+  const [sortBy,setSort]=useState('nombre');
+  const [showFilters,setShowFilters]=useState(false);
   const [tab,setTab]=useState('todos');
   const talleres=[...new Set(patients.map(p=>p.taller).filter(Boolean))].sort();
   const nuevos=patients.filter(p=>p.isNew).length;
+  const alertas=patients.filter(p=>p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO')).length;
 
-  const filtered=useMemo(()=>patients.filter(p=>{
-    const ms=!search||p.nombre.toLowerCase().includes(search.toLowerCase())||p.rut.includes(search);
-    const mt=!filterTaller||p.taller===filterTaller;
-    const me=!filterEmpam||p.empamEstado?.includes(filterEmpam);
-    if(tab==='alertas') return ms&&(p.empamEstado?.includes('VENCIDO')||
-      p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO'));
-    if(tab==='nuevos') return ms&&p.isNew;
-    return ms&&mt&&me;
-  }),[patients,search,filterTaller,filterEmpam,tab]);
+  function matchSearch(p,q){
+    if(!q) return true;
+    const terms=q.toLowerCase().trim().split(/\s+/);
+    const hay=`${p.nombre} ${p.rut} ${p.fono||''}`.toLowerCase();
+    return terms.every(t=>hay.includes(t));
+  }
+
+  const filtered=useMemo(()=>{
+    let list=patients.filter(p=>{
+      const ms=matchSearch(p,search);
+      const mt=!filterTaller||p.taller===filterTaller;
+      const me=!filterEmpam||p.empamEstado?.includes(filterEmpam);
+      const msx=!filterSexo||p.sexo===filterSexo;
+      if(tab==='alertas') return ms&&(p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO'));
+      if(tab==='nuevos') return ms&&p.isNew;
+      return ms&&mt&&me&&msx;
+    });
+    return [...list].sort((a,b)=>{
+      if(sortBy==='nombre') return a.nombre.localeCompare(b.nombre,'es');
+      if(sortBy==='edad') return (Number(b.edad)||0)-(Number(a.edad)||0);
+      if(sortBy==='empam'){const o={'VENCIDO':0,'VENCE PRONTO':1,'VIGENTE':2,'PENDIENTE':3};return (o[a.empamEstado]??4)-(o[b.empamEstado]??4);}
+      if(sortBy==='taller') return (a.taller||'').localeCompare(b.taller||'','es');
+      return 0;
+    });
+  },[patients,search,filterTaller,filterEmpam,filterSexo,sortBy,tab]);
+
+  const activeFilters=[filterTaller,filterEmpam,filterSexo].filter(Boolean).length;
+  function clearAll(){ setFT(''); setFE(''); setFS(''); setSearch(''); }
 
   return React.createElement('div',{className:'page',style:{paddingBottom:90}},
     React.createElement('div',{className:'tabs'},
-      [['todos','Todos'],['alertas','🚨 Alertas'],['nuevos',`✨ Nuevos (${nuevos})`]]
-        .map(([v,l])=>React.createElement('div',{key:v,className:`tab ${tab===v?'active':''}`,
-          onClick:()=>{ setTab(v); setFT(''); setFE(''); setSearch(''); }},l))
+      [['todos',`Todos (${patients.length})`],['alertas',`Alertas (${alertas})`],['nuevos',`Nuevos (${nuevos})`]]
+        .map(([v,l])=>React.createElement('div',{key:v,className:`tab ${tab===v?'active':''}`,onClick:()=>{ setTab(v); clearAll(); }},l))
     ),
-    React.createElement('div',{className:'search-wrap'},
+    React.createElement('div',{className:'search-wrap',style:{marginBottom:8}},
       React.createElement('span',{className:'search-icon'},'🔍'),
-      React.createElement('input',{type:'text',placeholder:'Nombre o RUT...',
-        value:search,onChange:e=>setSearch(e.target.value)})
+      React.createElement('input',{type:'text',placeholder:'Nombre, RUT o teléfono...',
+        value:search,onChange:e=>setSearch(e.target.value),autoComplete:'off',autoCorrect:'off',spellCheck:false}),
+      search&&React.createElement('span',{onClick:()=>setSearch(''),
+        style:{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',fontSize:18,cursor:'pointer',color:'#aaa'}},'✕')
     ),
-    tab==='todos'&&React.createElement('div',{style:{display:'flex',gap:8,marginBottom:12}},
-      React.createElement('select',{style:{flex:1,padding:'10px 12px',border:'1.5px solid #E0E0E0',
-        borderRadius:12,fontSize:13,background:'#fff'},value:filterTaller,onChange:e=>setFT(e.target.value)},
-        React.createElement('option',{value:''},'Todos los talleres'),
-        talleres.map(t=>React.createElement('option',{key:t,value:t},t))
+    React.createElement('div',{style:{display:'flex',gap:8,marginBottom:8,alignItems:'center'}},
+      React.createElement('button',{className:`btn btn-sm ${activeFilters>0?'btn-primary':'btn-ghost'}`,
+        style:{flex:'none',width:'auto',padding:'8px 14px'},onClick:()=>setShowFilters(f=>!f)},
+        `Filtros${activeFilters>0?` (${activeFilters})`:''}`),
+      React.createElement('select',{style:{flex:1,padding:'9px 10px',border:'1.5px solid #E0E0E0',borderRadius:10,fontSize:12,background:'#fff'},
+        value:sortBy,onChange:e=>setSort(e.target.value)},
+        React.createElement('option',{value:'nombre'},'A→Z'),
+        React.createElement('option',{value:'edad'},'Mayor edad'),
+        React.createElement('option',{value:'empam'},'EMPAM urgente'),
+        React.createElement('option',{value:'taller'},'Por Taller')
       ),
-      React.createElement('select',{style:{flex:1,padding:'10px 12px',border:'1.5px solid #E0E0E0',
-        borderRadius:12,fontSize:13,background:'#fff'},value:filterEmpam,onChange:e=>setFE(e.target.value)},
-        React.createElement('option',{value:''},'Todos EMPAM'),
-        React.createElement('option',{value:'VENCIDO'},'🔴 Vencido'),
-        React.createElement('option',{value:'PRONTO'},'🟡 Vence Pronto'),
-        React.createElement('option',{value:'VIGENTE'},'🟢 Vigente'),
-        React.createElement('option',{value:'PEND'},'⏳ Pendiente')
+      activeFilters>0&&React.createElement('button',{className:'btn btn-ghost btn-sm',
+        style:{flex:'none',width:'auto',padding:'8px 10px',fontSize:12},onClick:clearAll},'✕ Limpiar')
+    ),
+    showFilters&&React.createElement('div',{className:'card',style:{marginBottom:10,padding:12}},
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+        React.createElement('div',null,
+          React.createElement('label',{style:{fontSize:11,fontWeight:700,color:'#777',textTransform:'uppercase',display:'block',marginBottom:4}},'Taller'),
+          React.createElement('select',{style:{width:'100%',padding:'9px 8px',border:'1.5px solid #E0E0E0',borderRadius:10,fontSize:12,background:'#fff'},
+            value:filterTaller,onChange:e=>setFT(e.target.value)},
+            React.createElement('option',{value:''},'Todos'),
+            talleres.map(t=>React.createElement('option',{key:t,value:t},t.length>16?t.slice(0,16)+'...':t))
+          )
+        ),
+        React.createElement('div',null,
+          React.createElement('label',{style:{fontSize:11,fontWeight:700,color:'#777',textTransform:'uppercase',display:'block',marginBottom:4}},'EMPAM'),
+          React.createElement('select',{style:{width:'100%',padding:'9px 8px',border:'1.5px solid #E0E0E0',borderRadius:10,fontSize:12,background:'#fff'},
+            value:filterEmpam,onChange:e=>setFE(e.target.value)},
+            React.createElement('option',{value:''},'Todos'),
+            React.createElement('option',{value:'VENCIDO'},'🔴 Vencido'),
+            React.createElement('option',{value:'PRONTO'},'🟡 Vence Pronto'),
+            React.createElement('option',{value:'VIGENTE'},'🟢 Vigente'),
+            React.createElement('option',{value:'PEND'},'⏳ Pendiente')
+          )
+        ),
+        React.createElement('div',null,
+          React.createElement('label',{style:{fontSize:11,fontWeight:700,color:'#777',textTransform:'uppercase',display:'block',marginBottom:4}},'Sexo'),
+          React.createElement('select',{style:{width:'100%',padding:'9px 8px',border:'1.5px solid #E0E0E0',borderRadius:10,fontSize:12,background:'#fff'},
+            value:filterSexo,onChange:e=>setFS(e.target.value)},
+            React.createElement('option',{value:''},'Todos'),
+            React.createElement('option',{value:'M'},'♀ Mujer'),
+            React.createElement('option',{value:'H'},'♂ Hombre')
+          )
+        )
       )
     ),
-    React.createElement('div',{style:{fontSize:12,color:'#888',marginBottom:10}},
-      `${filtered.length} paciente${filtered.length!==1?'s':''}`),
+    React.createElement('div',{style:{fontSize:12,color:'#888',marginBottom:8}},`${filtered.length} de ${patients.length} pacientes`),
     filtered.length===0
       ?React.createElement('div',{className:'empty-state'},
           React.createElement('div',{className:'emoji'},'🔍'),
-          React.createElement('p',null,'Sin resultados'))
+          React.createElement('p',{style:{marginBottom:12}},search?`Sin resultados para "${search}"`:'Sin pacientes aquí'),
+          (search||activeFilters>0)&&React.createElement('button',{className:'btn btn-ghost btn-sm',
+            style:{width:'auto',margin:'0 auto'},onClick:clearAll},'Limpiar filtros'))
       :React.createElement('div',{className:'patient-list'},
           filtered.map(p=>React.createElement(PatientRow,{key:p.id,patient:p,onClick:()=>onPatient(p)}))),
-    React.createElement('button',{className:'fab',onClick:onNuevo},'＋')
+    React.createElement('button',{className:'fab',onClick:onNuevo,title:'Nuevo paciente'},'＋')
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: FICHA PACIENTE
@@ -1118,15 +1175,21 @@ function ViewConfig({patients,setPatients,toast}){
 // APP SHELL
 // ─────────────────────────────────────────────────────────────────────
 function App(){
-  const [unlocked,setUnlocked] = useState(()=>DB.get('sessionUnlocked',false));
+  // PIN: use sessionStorage so it always asks on fresh browser open
+  const [unlocked,setUnlocked] = useState(()=>{
+    try{ return sessionStorage.getItem('masama_unlocked')==='1'; }catch{ return false; }
+  });
   const [view,setView]         = useState('inicio');
   const [patients,setPatients] = useState(()=>DB.get('patients',[]));
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
   const [selPatient,setSel]    = useState(null);
   const [toastMsg,setToast]    = useState('');
 
-  // Session unlock (resets on page reload, keeps unlocked within session)
-  useEffect(()=>{ if(unlocked) DB.set('sessionUnlocked',true); },[unlocked]);
+  // Store unlock in sessionStorage (clears when browser/tab closes)
+  useEffect(()=>{
+    try{ if(unlocked) sessionStorage.setItem('masama_unlocked','1');
+         else sessionStorage.removeItem('masama_unlocked'); }catch{}
+  },[unlocked]);
 
   function toast(msg){ setToast(msg); setTimeout(()=>setToast(''),2600); }
   function openPatient(p){ setSel(p); setView('ficha'); }
