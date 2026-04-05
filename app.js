@@ -2896,8 +2896,7 @@ function ViewAgenda({ toast }) {
             DB.set('agendaDuplasPersonas', DUPLAS_DEFAULT);
             toast('✅ Equipo restaurado con todos los integrantes');
           }
-        }, '🔄 Restaurar equipo completo (Daniel, Silvana, Jorge, Anita, Gonzalo)')
-        ),
+        }, '🔄 Restaurar equipo completo (Daniel, Silvana, Jorge, Anita, Gonzalo)'),
         React.createElement('button', { className: 'btn btn-ghost', style: { marginTop: 14 },
           onClick: onClose }, 'Cerrar')
       )
