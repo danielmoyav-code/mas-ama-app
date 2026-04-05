@@ -513,7 +513,17 @@ function ViewInicio({patients,attendanceLog,onNav}){
   const mujeres=patients.filter(p=>p.sexo==='M').length;
   const hombres=patients.filter(p=>p.sexo==='H').length;
 
+  const hora = new Date().getHours();
+  const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
+
   return React.createElement('div',{className:'page'},
+    // Welcome banner con figura
+    React.createElement('div',{className:'welcome-banner'},
+      React.createElement('div',{className:'welcome-figure'},'🏃'),
+      React.createElement('h2',null,`${saludo}, Daniel 👋`),
+      React.createElement('p',null,`${total} pacientes activos · ${new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})}`)
+    ),
+
     // KPIs
     React.createElement('div',{className:'kpi-grid'},
       React.createElement('div',{className:'kpi-card info'},
