@@ -540,6 +540,10 @@ function ViewInicio({patients,attendanceLog,onNav}){
       React.createElement('div',{className:'btn-row'},
         React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('nuevo')},'➕ Nuevo Paciente'),
         React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('exportar')},'📤 Exportar Excel')
+      ),
+      React.createElement('div',{className:'btn-row'},
+        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('rem')},'📊 Generar REM'),
+        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('agenda')},'📅 Ver Agenda')
       )
     ),
 
@@ -2404,6 +2408,591 @@ function ViewRutinas({ sessionLog, setSessionLog, toast }) {
 }
 
 
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MÓDULO REM + AGENDA DUPLAS
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── DATOS BASE DUPLAS (del Excel CICLOS) ─────────────────────────────
+const DUPLAS_DEFAULT = [
+  { nombre: 'SILVANA', color: '#2E75B6' },
+  { nombre: 'JORGE',   color: '#375623' },
+  { nombre: 'ANITA',   color: '#7030A0' },
+  { nombre: 'GONZALO', color: '#ED7D31' },
+];
+
+const DIAS_SEMANA = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
+
+const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// ── REM — CÓDIGOS PRESTACIONES ────────────────────────────────────────
+// Basado en orientaciones técnicas MINSAL MAS AMA
+const REM_PRESTACIONES = {
+  ingreso_taller:    { codigo:'P4311', nombre:'Ingreso programa MAS AMA (Taller)', grupo:'Ingresos' },
+  sesion_taller:     { codigo:'P4312', nombre:'Sesión taller estimulación funcional', grupo:'Sesiones' },
+  egreso_completo:   { codigo:'P4313', nombre:'Egreso completa ciclo', grupo:'Egresos' },
+  egreso_abandono:   { codigo:'P4314', nombre:'Egreso por abandono', grupo:'Egresos' },
+  seguimiento_tel:   { codigo:'P4315', nombre:'Seguimiento telefónico (Manual)', grupo:'Seguimientos' },
+  egreso_manual:     { codigo:'P4316', nombre:'Egreso Manual de Estimulación', grupo:'Egresos' },
+  eval_cognitiva:    { codigo:'P4317', nombre:'Evaluación cognitiva (MOCA/RUDAS)', grupo:'Evaluaciones' },
+  consejeria:        { codigo:'P4318', nombre:'Consejería individual activ. física', grupo:'Consejerías' },
+};
+
+// ── CALCULAR REM ───────────────────────────────────────────────────────
+function calcularREM(patients, attendanceLog, mes) {
+  // mes = "2026-04"
+  const [anio, mesN] = mes.split('-').map(Number);
+
+  // Asistencias del mes
+  const attDelMes = Object.entries(attendanceLog).filter(([k]) => k.startsWith(mes));
+  const presentes = attDelMes.filter(([, v]) => v === 'P');
+  const ausentes  = attDelMes.filter(([, v]) => v === 'A');
+
+  // Sesiones únicas del mes (por taller+fecha)
+  const sesionesUnicas = new Set(
+    attDelMes.map(([k]) => { const [f,,t] = k.split('||'); return `${f}||${t}`; })
+  );
+
+  // Pacientes en taller
+  const enTaller  = patients.filter(p => p.estado === 'TALLER');
+  const enManual  = patients.filter(p => p.estado === 'MANUAL +');
+  const nuevos    = patients.filter(p => {
+    if (!p.createdAt) return false;
+    const d = new Date(p.createdAt);
+    return d.getFullYear() === anio && (d.getMonth()+1) === mesN;
+  });
+  const egresos   = patients.filter(p =>
+    p.estado === 'EGRESO' && p.ciclo
+  );
+  const abandonos = patients.filter(p => p.estado === 'RECHAZA');
+
+  // Por taller
+  const porTaller = {};
+  enTaller.forEach(p => {
+    if (!p.taller) return;
+    if (!porTaller[p.taller]) porTaller[p.taller] = { pac: 0, pres: 0 };
+    porTaller[p.taller].pac++;
+  });
+  presentes.forEach(([k]) => {
+    const [, taller] = k.split('||');
+    if (porTaller[taller]) porTaller[taller].pres++;
+  });
+
+  // Sexo
+  const mujeres = enTaller.filter(p => p.sexo === 'M').length;
+  const hombres = enTaller.filter(p => p.sexo === 'H').length;
+
+  // Rango etario
+  const rangos = {'60-64':0,'65-69':0,'70-74':0,'75-79':0,'80+':0};
+  enTaller.forEach(p => {
+    const e = Number(p.edad);
+    if (e>=60&&e<=64) rangos['60-64']++;
+    else if (e>=65&&e<=69) rangos['65-69']++;
+    else if (e>=70&&e<=74) rangos['70-74']++;
+    else if (e>=75&&e<=79) rangos['75-79']++;
+    else if (e>=80) rangos['80+']++;
+  });
+
+  return {
+    mes, anio, mesN,
+    totalPacientes:    enTaller.length,
+    nuevosIngreso:     nuevos.length,
+    enManual:          enManual.length,
+    egresos:           egresos.length,
+    abandonos:         abandonos.length,
+    sesionesRealizadas:sesionesUnicas.size,
+    totalPresencias:   presentes.length,
+    totalAusencias:    ausentes.length,
+    pctAsistencia:     presentes.length > 0
+      ? Math.round(presentes.length / (presentes.length + ausentes.length) * 100) : 0,
+    mujeres, hombres,
+    rangos, porTaller,
+  };
+}
+
+// ── VIEW: REM ─────────────────────────────────────────────────────────
+function ViewREM({ patients, attendanceLog, toast }) {
+  const [mes, setMes]     = useState(new Date().toISOString().slice(0,7));
+  const [copied, setCopied] = useState(false);
+
+  const rem = calcularREM(patients, attendanceLog, mes);
+  const [anio, mesN] = mes.split('-').map(Number);
+  const mesLabel = `${MESES_ES[mesN-1]} ${anio}`;
+
+  function copyREM() {
+    const texto = generarTextoREM(rem, mesLabel);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(texto).then(() => {
+        setCopied(true); setTimeout(() => setCopied(false), 2000);
+        toast('✅ REM copiado — pega en el documento de tu jefa');
+      });
+    }
+  }
+
+  function generarTextoREM(r, label) {
+    const lines = [
+      `═══════════════════════════════`,
+      `REPORTE REM — PROGRAMA MAS AMA`,
+      `${label} · CESFAM Félix de Amesti`,
+      `═══════════════════════════════`,
+      ``,
+      `COBERTURA`,
+      `Total pacientes activos:  ${r.totalPacientes}`,
+      `Nuevos ingresos del mes:  ${r.nuevosIngreso}`,
+      `Pacientes con Manual:     ${r.enManual}`,
+      `Egresos completos ciclo:  ${r.egresos}`,
+      `Abandonos:                ${r.abandonos}`,
+      ``,
+      `SESIONES`,
+      `Sesiones realizadas:      ${r.sesionesRealizadas}`,
+      `Total presencias:         ${r.totalPresencias}`,
+      `Total ausencias:          ${r.totalAusencias}`,
+      `% Asistencia global:      ${r.pctAsistencia}%`,
+      ``,
+      `DISTRIBUCIÓN POR SEXO`,
+      `Mujeres:  ${r.mujeres} (${r.totalPacientes ? Math.round(r.mujeres/r.totalPacientes*100) : 0}%)`,
+      `Hombres:  ${r.hombres} (${r.totalPacientes ? Math.round(r.hombres/r.totalPacientes*100) : 0}%)`,
+      ``,
+      `DISTRIBUCIÓN POR EDAD`,
+      ...Object.entries(r.rangos).map(([k,v]) => `${k} años:  ${v} pacientes`),
+      ``,
+      `ASISTENCIA POR TALLER`,
+      ...Object.entries(r.porTaller).map(([t,s]) =>
+        `${t}: ${s.pac} pacientes · ${s.pres} presencias`),
+      ``,
+      `Generado con MAS AMA Pro · ${new Date().toLocaleDateString('es-CL')}`,
+    ];
+    return lines.join('\n');
+  }
+
+  const kpiStyle = (color) => ({
+    background: '#fff', borderRadius: 12, padding: '14px 12px',
+    boxShadow: '0 2px 10px rgba(0,0,0,.07)', borderLeft: `4px solid ${color}`
+  });
+
+  return React.createElement('div', { className: 'page' },
+    // Cabecera
+    React.createElement('div', { style: { background: '#1F3864', borderRadius: 12,
+      padding: '14px 16px', marginBottom: 14 } },
+      React.createElement('div', { style: { color: '#00B0F0', fontWeight: 900, fontSize: 14, marginBottom: 2 } },
+        '📊 GENERADOR REM'),
+      React.createElement('div', { style: { color: 'rgba(255,255,255,.8)', fontSize: 13, lineHeight: 1.5 } },
+        'Datos calculados automáticamente. Copia y pega en el documento de tu jefa o en el sistema REM.')
+    ),
+
+    // Selector de mes
+    React.createElement('div', { className: 'card' },
+      React.createElement(Field, { label: 'Mes del reporte' },
+        React.createElement('input', { type: 'month', value: mes, onChange: e => setMes(e.target.value) })
+      ),
+      React.createElement('div', { style: { fontSize: 14, fontWeight: 800, color: '#1F3864', marginBottom: 4 } },
+        `Reporte: ${mesLabel}`),
+      React.createElement('div', { style: { fontSize: 12, color: '#888' } },
+        'Los datos se calculan en base a la asistencia registrada en la app y los datos de pacientes.')
+    ),
+
+    // KPIs principales
+    React.createElement('div', { className: 'kpi-grid', style: { marginBottom: 12 } },
+      React.createElement('div', { style: kpiStyle('#2E75B6') },
+        React.createElement('div', { className: 'kpi-val', style: { color: '#2E75B6' } }, rem.totalPacientes),
+        React.createElement('div', { className: 'kpi-lbl' }, 'Pacientes Activos')),
+      React.createElement('div', { style: kpiStyle('#375623') },
+        React.createElement('div', { className: 'kpi-val', style: { color: '#375623' } }, rem.nuevosIngreso),
+        React.createElement('div', { className: 'kpi-lbl' }, 'Nuevos Ingresos')),
+      React.createElement('div', { style: kpiStyle('#00B0F0') },
+        React.createElement('div', { className: 'kpi-val', style: { color: '#00B0F0' } }, rem.sesionesRealizadas),
+        React.createElement('div', { className: 'kpi-lbl' }, 'Sesiones Realizadas')),
+      React.createElement('div', { style: kpiStyle(rem.pctAsistencia >= 75 ? '#375623' : '#C00000') },
+        React.createElement('div', { className: 'kpi-val',
+          style: { color: rem.pctAsistencia >= 75 ? '#375623' : '#C00000' } }, `${rem.pctAsistencia}%`),
+        React.createElement('div', { className: 'kpi-lbl' }, '% Asistencia'))
+    ),
+
+    // Detalle presencias
+    React.createElement('div', { className: 'card' },
+      React.createElement('div', { className: 'card-title' }, '📋 Detalle de Atenciones'),
+      [
+        ['Nuevos ingresos al programa', rem.nuevosIngreso, '#375623'],
+        ['Sesiones de taller realizadas', rem.sesionesRealizadas, '#2E75B6'],
+        ['Total presencias registradas', rem.totalPresencias, '#00B0F0'],
+        ['Total ausencias', rem.totalAusencias, '#888'],
+        ['Pacientes con Manual de Estimulación', rem.enManual, '#7030A0'],
+        ['Egresos completos del ciclo', rem.egresos, '#ED7D31'],
+        ['Abandonos', rem.abandonos, '#C00000'],
+      ].map(([label, val, color]) =>
+        React.createElement('div', { key: label, style: {
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '9px 0', borderBottom: '1px solid #f0f0f0'
+        } },
+          React.createElement('span', { style: { fontSize: 14, color: '#444' } }, label),
+          React.createElement('span', { style: { fontWeight: 900, fontSize: 16, color } }, val)
+        )
+      )
+    ),
+
+    // Sexo
+    React.createElement('div', { className: 'card' },
+      React.createElement('div', { className: 'card-title' }, '👥 Distribución por Sexo'),
+      React.createElement('div', { style: { display: 'flex', gap: 10 } },
+        React.createElement('div', { style: { flex: 1, background: '#EDE0F7', borderRadius: 10,
+          padding: 12, textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: 28, fontWeight: 900, color: '#7030A0' } }, rem.mujeres),
+          React.createElement('div', { style: { fontSize: 12, color: '#7030A0', fontWeight: 700 } }, '♀ Mujeres')
+        ),
+        React.createElement('div', { style: { flex: 1, background: '#DDEEFF', borderRadius: 10,
+          padding: 12, textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: 28, fontWeight: 900, color: '#2E75B6' } }, rem.hombres),
+          React.createElement('div', { style: { fontSize: 12, color: '#2E75B6', fontWeight: 700 } }, '♂ Hombres')
+        )
+      )
+    ),
+
+    // Rangos etarios
+    React.createElement('div', { className: 'card' },
+      React.createElement('div', { className: 'card-title' }, '🎂 Distribución por Edad'),
+      Object.entries(rem.rangos).map(([rango, n]) =>
+        React.createElement('div', { key: rango, style: {
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '6px 0', borderBottom: '1px solid #f0f0f0'
+        } },
+          React.createElement('div', { style: { width: 60, fontSize: 13, fontWeight: 700, color: '#555' } }, rango),
+          React.createElement('div', { style: { flex: 1, height: 10, background: '#EEF2F7', borderRadius: 5, overflow: 'hidden' } },
+            React.createElement('div', { style: {
+              height: '100%', borderRadius: 5, background: '#7030A0',
+              width: `${rem.totalPacientes ? Math.round(n/rem.totalPacientes*100) : 0}%`
+            } })
+          ),
+          React.createElement('div', { style: { width: 28, textAlign: 'right', fontWeight: 800, fontSize: 14 } }, n)
+        )
+      )
+    ),
+
+    // Por taller
+    Object.keys(rem.porTaller).length > 0 && React.createElement('div', { className: 'card' },
+      React.createElement('div', { className: 'card-title' }, '🏃 Asistencia por Taller'),
+      Object.entries(rem.porTaller).map(([taller, s]) =>
+        React.createElement('div', { key: taller, style: {
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '8px 0', borderBottom: '1px solid #f0f0f0'
+        } },
+          React.createElement('div', null,
+            React.createElement('div', { style: { fontWeight: 700, fontSize: 13 } }, taller),
+            React.createElement('div', { style: { fontSize: 11, color: '#888' } }, `${s.pac} pacientes`)
+          ),
+          React.createElement('div', { style: { textAlign: 'right' } },
+            React.createElement('div', { style: { fontWeight: 900, fontSize: 15, color: '#2E75B6' } },
+              `${s.pres} pres.`),
+            React.createElement('div', { style: { fontSize: 11, color: '#888' } },
+              s.pac > 0 ? `${Math.round(s.pres/s.pac*100)}%` : '—')
+          )
+        )
+      )
+    ),
+
+    // Nota importante
+    React.createElement('div', { style: { background: '#FFF9E6', border: '1.5px solid #FFD966',
+      borderRadius: 12, padding: 14, marginBottom: 14 } },
+      React.createElement('div', { style: { fontWeight: 800, fontSize: 13, marginBottom: 6 } },
+        '⚠️ Importante antes de enviar'),
+      React.createElement('div', { style: { fontSize: 13, color: '#555', lineHeight: 1.6 } },
+        'Verifica que la asistencia del mes esté completamente registrada en la app antes de copiar el REM. ' +
+        'Compara sesiones realizadas vs sesiones esperadas según tu calendario.')
+    ),
+
+    // Botón copiar
+    React.createElement('button', {
+      className: `btn ${copied ? 'btn-ghost' : 'btn-primary'}`,
+      style: { marginBottom: 8 },
+      onClick: copyREM
+    }, copied ? '✅ ¡REM copiado!' : '📋 Copiar REM completo'),
+
+    rem.totalPresencias === 0 && React.createElement('div', { style: {
+      background: '#FFF0F0', borderRadius: 10, padding: 12, fontSize: 13, color: '#C00000'
+    } },
+      '⚠️ No hay asistencia registrada para este mes. Marca las listas primero en la sección Lista.')
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  VIEW: AGENDA DE DUPLAS
+// ═══════════════════════════════════════════════════════════════════════
+function ViewAgenda({ toast }) {
+  const [agenda, setAgenda]       = useState(() => DB.get('agendaDuplas', {}));
+  const [duplas, setDuplas]       = useState(() => DB.get('agendaDuplasPersonas', DUPLAS_DEFAULT));
+  const [semana, setSemana]       = useState(() => getISOWeek(new Date()));
+  const [editMode, setEdit]       = useState(false);
+  const [editCell, setEditCell]   = useState(null); // {dia, turno}
+  const [showConfig, setConfig]   = useState(false);
+  const [newDupla, setNewDupla]   = useState('');
+
+  // Semana actual como label
+  function getISOWeek(date) {
+    const d = new Date(date);
+    const day = d.getDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    return `${d.getUTCFullYear()}-W${String(Math.ceil((((d-yearStart)/86400000)+1)/7)).padStart(2,'0')}`;
+  }
+
+  function semanaLabel(isoWeek) {
+    const [y, w] = isoWeek.split('-W').map(Number);
+    const jan4 = new Date(y, 0, 4);
+    const dayOfWeek = jan4.getDay() || 7;
+    const weekStart = new Date(jan4);
+    weekStart.setDate(jan4.getDate() - dayOfWeek + 1 + (w-1)*7);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+4);
+    return `${weekStart.getDate()} - ${weekEnd.getDate()} ${MESES_ES[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
+  }
+
+  function changeSemana(delta) {
+    const [y, w] = semana.split('-W').map(Number);
+    let newW = w + delta;
+    let newY = y;
+    if (newW > 52) { newW = 1; newY++; }
+    if (newW < 1)  { newW = 52; newY--; }
+    setSemana(`${newY}-W${String(newW).padStart(2,'0')}`);
+  }
+
+  const agendaKey = (dia, turno) => `${semana}||${dia}||${turno}`;
+
+  function getCell(dia, turno) {
+    return (agenda[agendaKey(dia, turno)] || { dupla1: '', dupla2: '', taller: '', hora: '' });
+  }
+
+  function setCell(dia, turno, val) {
+    const next = { ...agenda, [agendaKey(dia, turno)]: val };
+    setAgenda(next); DB.set('agendaDuplas', next);
+  }
+
+  function addDupla() {
+    if (!newDupla.trim()) return;
+    const colors = ['#C00000','#1F3864','#00B0F0','#375623','#ED7D31','#7030A0'];
+    const next = [...duplas, { nombre: newDupla.trim().toUpperCase(),
+                               color: colors[duplas.length % colors.length] }];
+    setDuplas(next); DB.set('agendaDuplasPersonas', next);
+    setNewDupla(''); toast(`✅ ${newDupla} agregado`);
+  }
+
+  function removeDupla(i) {
+    const next = duplas.filter((_,j) => j!==i);
+    setDuplas(next); DB.set('agendaDuplasPersonas', next);
+  }
+
+  const TURNOS = [
+    { id: 'AM', label: '☀️ AM', color: '#2E75B6' },
+    { id: 'PM', label: '🌙 PM', color: '#7030A0' },
+  ];
+
+  // Edit cell modal
+  function EditModal({ dia, turno, onClose }) {
+    const current = getCell(dia, turno);
+    const [form, setForm] = useState({ ...current });
+    function save() {
+      setCell(dia, turno, form);
+      toast('✅ Agenda actualizada');
+      onClose();
+    }
+    return React.createElement('div', { className: 'overlay',
+      onClick: e => { if(e.target===e.currentTarget) onClose(); }
+    },
+      React.createElement('div', { className: 'sheet' },
+        React.createElement('div', { className: 'sheet-handle' }),
+        React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 14 } },
+          `${dia} ${turno === 'AM' ? '☀️ Mañana' : '🌙 Tarde'}`),
+        React.createElement(Field, { label: 'Taller / Lugar' },
+          React.createElement('select', {
+            value: form.taller || '',
+            onChange: e => setForm(f => ({ ...f, taller: e.target.value }))
+          },
+            React.createElement('option', { value: '' }, '— Sin taller —'),
+            TALLERES.map(t => React.createElement('option', { key: t, value: t }, t))
+          )
+        ),
+        React.createElement(Field, { label: 'Hora' },
+          React.createElement('input', { type: 'time', value: form.hora || '',
+            onChange: e => setForm(f => ({ ...f, hora: e.target.value })) })
+        ),
+        React.createElement(Field, { label: 'Integrante 1' },
+          React.createElement('select', {
+            value: form.dupla1 || '',
+            onChange: e => setForm(f => ({ ...f, dupla1: e.target.value }))
+          },
+            React.createElement('option', { value: '' }, '— Seleccionar —'),
+            duplas.map(d => React.createElement('option', { key: d.nombre, value: d.nombre }, d.nombre))
+          )
+        ),
+        React.createElement(Field, { label: 'Integrante 2' },
+          React.createElement('select', {
+            value: form.dupla2 || '',
+            onChange: e => setForm(f => ({ ...f, dupla2: e.target.value }))
+          },
+            React.createElement('option', { value: '' }, '— Seleccionar —'),
+            duplas.map(d => React.createElement('option', { key: d.nombre, value: d.nombre }, d.nombre))
+          )
+        ),
+        React.createElement(Field, { label: 'Notas' },
+          React.createElement('input', { type: 'text', value: form.notas || '',
+            placeholder: 'Observaciones opcionales...',
+            onChange: e => setForm(f => ({ ...f, notas: e.target.value })) })
+        ),
+        React.createElement('div', { className: 'btn-row', style: { marginTop: 14 } },
+          React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 }, onClick: onClose }, 'Cancelar'),
+          React.createElement('button', { className: 'btn btn-primary', style: { flex: 2 }, onClick: save }, '💾 Guardar')
+        )
+      )
+    );
+  }
+
+  // Config modal — gestionar integrantes del equipo
+  function ConfigModal({ onClose }) {
+    return React.createElement('div', { className: 'overlay',
+      onClick: e => { if(e.target===e.currentTarget) onClose(); }
+    },
+      React.createElement('div', { className: 'sheet' },
+        React.createElement('div', { className: 'sheet-handle' }),
+        React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 14 } },
+          '⚙️ Equipo MAS AMA'),
+        React.createElement('div', { className: 'card-title' }, 'Integrantes del equipo'),
+        duplas.map((d, i) =>
+          React.createElement('div', { key: i, style: {
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 0', borderBottom: '1px solid #f0f0f0'
+          } },
+            React.createElement('div', { style: {
+              width: 32, height: 32, borderRadius: '50%', background: d.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontWeight: 800, fontSize: 13
+            } }, d.nombre[0]),
+            React.createElement('span', { style: { flex: 1, fontWeight: 700 } }, d.nombre),
+            React.createElement('button', {
+              onClick: () => removeDupla(i),
+              style: { background: '#FFF0F0', color: '#C00000', border: 'none',
+                       borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }
+            }, 'Quitar')
+          )
+        ),
+        React.createElement('div', { style: { display: 'flex', gap: 8, marginTop: 14 } },
+          React.createElement('input', {
+            type: 'text', placeholder: 'Nombre del integrante',
+            value: newDupla, onChange: e => setNewDupla(e.target.value),
+            style: { flex: 1, padding: '11px 14px', border: '1.5px solid #E0E0E0',
+                     borderRadius: 12, fontSize: 14, outline: 'none' },
+            onKeyDown: e => e.key === 'Enter' && addDupla()
+          }),
+          React.createElement('button', {
+            className: 'btn btn-primary btn-sm', style: { width: 'auto', flex: 'none' },
+            onClick: addDupla
+          }, '+ Agregar')
+        ),
+        React.createElement('button', { className: 'btn btn-ghost', style: { marginTop: 14 },
+          onClick: onClose }, 'Cerrar')
+      )
+    );
+  }
+
+  return React.createElement('div', { className: 'page' },
+    // Header
+    React.createElement('div', { style: { background: '#1F3864', borderRadius: 12,
+      padding: '12px 14px', marginBottom: 14 } },
+      React.createElement('div', { style: { color: '#00B0F0', fontWeight: 900, fontSize: 14, marginBottom: 2 } },
+        '📅 AGENDA DE DUPLAS'),
+      React.createElement('div', { style: { color: 'rgba(255,255,255,.8)', fontSize: 13 } },
+        'Organiza quién va a qué taller cada semana.')
+    ),
+
+    // Semana navigator
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 } },
+      React.createElement('button', {
+        onClick: () => changeSemana(-1),
+        style: { background: '#fff', border: '1.5px solid #E0E0E0', borderRadius: 10,
+                 padding: '10px 14px', fontSize: 16, cursor: 'pointer', fontWeight: 700 }
+      }, '←'),
+      React.createElement('div', { style: { flex: 1, background: '#fff', borderRadius: 10,
+        padding: '10px 12px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,.07)' } },
+        React.createElement('div', { style: { fontWeight: 800, fontSize: 14 } }, semanaLabel(semana)),
+        React.createElement('div', { style: { fontSize: 11, color: '#888', marginTop: 2 } }, semana)
+      ),
+      React.createElement('button', {
+        onClick: () => changeSemana(1),
+        style: { background: '#fff', border: '1.5px solid #E0E0E0', borderRadius: 10,
+                 padding: '10px 14px', fontSize: 16, cursor: 'pointer', fontWeight: 700 }
+      }, '→')
+    ),
+
+    // Semana actual button
+    React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 14 } },
+      React.createElement('button', {
+        className: 'btn btn-ghost btn-sm', style: { flex: 1 },
+        onClick: () => setSemana(getISOWeek(new Date()))
+      }, '📅 Esta semana'),
+      React.createElement('button', {
+        className: 'btn btn-ghost btn-sm', style: { flex: 1 },
+        onClick: () => setConfig(true)
+      }, '👥 Equipo')
+    ),
+
+    // Equipo chips
+    duplas.length > 0 && React.createElement('div', { style: {
+      display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12
+    } },
+      duplas.map(d => React.createElement('span', { key: d.nombre, style: {
+        background: d.color, color: '#fff', borderRadius: 20,
+        padding: '4px 12px', fontSize: 12, fontWeight: 700
+      } }, d.nombre))
+    ),
+
+    // Tabla de agenda — un día por día
+    DIAS_SEMANA.map(dia =>
+      React.createElement('div', { key: dia, className: 'card', style: { marginBottom: 10, padding: '12px 14px' } },
+        React.createElement('div', { style: { fontWeight: 800, fontSize: 15, color: '#1F3864',
+          marginBottom: 10, borderBottom: '2px solid #EEF2F7', paddingBottom: 8 } }, dia),
+        TURNOS.map(turno => {
+          const cell = getCell(dia, turno.id);
+          const hasData = cell.taller || cell.dupla1;
+          return React.createElement('div', { key: turno.id,
+            style: {
+              background: hasData ? '#F0F7FF' : '#F8F9FA',
+              borderRadius: 10, padding: '10px 12px', marginBottom: 6,
+              border: hasData ? '1.5px solid #BFDBFE' : '1.5px dashed #E0E0E0',
+              cursor: 'pointer',
+            },
+            onClick: () => setEditCell({ dia, turno: turno.id })
+          },
+            React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center' } },
+              React.createElement('span', { style: { fontSize: 13, fontWeight: 700,
+                color: turno.color } }, turno.label),
+              hasData && cell.hora && React.createElement('span', { style: {
+                fontSize: 12, color: '#888', fontWeight: 600
+              } }, cell.hora)
+            ),
+            hasData
+              ? React.createElement('div', { style: { marginTop: 6 } },
+                  cell.taller && React.createElement('div', { style: { fontWeight: 700, fontSize: 14, color: '#1F3864' } },
+                    cell.taller),
+                  React.createElement('div', { style: { fontSize: 13, color: '#555', marginTop: 2 } },
+                    [cell.dupla1, cell.dupla2].filter(Boolean).join(' · ')),
+                  cell.notas && React.createElement('div', { style: { fontSize: 11, color: '#888', marginTop: 4,
+                    fontStyle: 'italic' } }, cell.notas)
+                )
+              : React.createElement('div', { style: { fontSize: 13, color: '#bbb', marginTop: 4 } },
+                  '+ Tocar para agregar taller')
+          );
+        })
+      )
+    ),
+
+    // Modales
+    editCell && React.createElement(EditModal, {
+      dia: editCell.dia, turno: editCell.turno,
+      onClose: () => setEditCell(null)
+    }),
+    showConfig && React.createElement(ConfigModal, { onClose: () => setConfig(false) })
+  );
+}
+
+
 // ─────────────────────────────────────────────────────────────────────
 // APP SHELL
 // ─────────────────────────────────────────────────────────────────────
@@ -2439,7 +3028,7 @@ function App(){
     p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO')
   ).length;
   const hasBack=['ficha','nuevo'].includes(view);
-  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',rutinas:'Rutinas de Sesión',
+  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',rutinas:'Rutinas de Sesión',rem:'Generador REM',agenda:'Agenda Duplas',
     nuevo:'Nuevo Paciente',ficha:selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas',exportar:'Exportar Excel',config:'Configuración'};
 
@@ -2450,6 +3039,7 @@ function App(){
     {id:'alertas',icon:'🚨',label:'Alertas',dot:alertCount>0},
     {id:'rayen',icon:'🏥',label:'RAYEN'},
     {id:'rutinas',icon:'📚',label:'Rutinas'},
+    {id:'agenda',icon:'📅',label:'Agenda'},
     {id:'config',icon:'⚙️',label:'Config'},
   ];
 
@@ -2482,6 +3072,8 @@ function App(){
       :view==='exportar' ?React.createElement(ViewExportar,{patients,attendanceLog,toast})
       :view==='rayen'    ?React.createElement(ViewRayen,{patients,attendanceLog,toast})
       :view==='rutinas'  ?React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
+      :view==='rem'      ?React.createElement(ViewREM,{patients,attendanceLog,toast})
+      :view==='agenda'   ?React.createElement(ViewAgenda,{toast})
       :view==='config'   ?React.createElement(ViewConfig,{patients,setPatients,toast})
       :null,
 
