@@ -2415,6 +2415,7 @@ function ViewRutinas({ sessionLog, setSessionLog, toast }) {
 
 // ── DATOS BASE DUPLAS (del Excel CICLOS) ─────────────────────────────
 const DUPLAS_DEFAULT = [
+  { nombre: 'DANIEL',  color: '#C00000' },
   { nombre: 'SILVANA', color: '#2E75B6' },
   { nombre: 'JORGE',   color: '#375623' },
   { nombre: 'ANITA',   color: '#7030A0' },
@@ -2852,8 +2853,10 @@ function ViewAgenda({ toast }) {
       React.createElement('div', { className: 'sheet' },
         React.createElement('div', { className: 'sheet-handle' }),
         React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 14 } },
-          '⚙️ Equipo MAS AMA'),
+          '👥 Equipo MAS AMA — Agregar Profesional'),
         React.createElement('div', { className: 'card-title' }, 'Integrantes del equipo'),
+        React.createElement('div', { style: { fontSize: 13, color: '#777', marginBottom: 10, lineHeight: 1.5 } },
+          'Agrega o quita profesionales del equipo. Aparecerán en el selector de duplas.'),
         duplas.map((d, i) =>
           React.createElement('div', { key: i, style: {
             display: 'flex', alignItems: 'center', gap: 10,
@@ -2884,6 +2887,16 @@ function ViewAgenda({ toast }) {
             className: 'btn btn-primary btn-sm', style: { width: 'auto', flex: 'none' },
             onClick: addDupla
           }, '+ Agregar')
+        ),
+        React.createElement('button', {
+          className: 'btn btn-ghost btn-sm',
+          style: { marginTop: 8, fontSize: 12 },
+          onClick: () => {
+            setDuplas(DUPLAS_DEFAULT);
+            DB.set('agendaDuplasPersonas', DUPLAS_DEFAULT);
+            toast('✅ Equipo restaurado con todos los integrantes');
+          }
+        }, '🔄 Restaurar equipo completo (Daniel, Silvana, Jorge, Anita, Gonzalo)')
         ),
         React.createElement('button', { className: 'btn btn-ghost', style: { marginTop: 14 },
           onClick: onClose }, 'Cerrar')
@@ -2929,7 +2942,7 @@ function ViewAgenda({ toast }) {
       React.createElement('button', {
         className: 'btn btn-ghost btn-sm', style: { flex: 1 },
         onClick: () => setConfig(true)
-      }, '👥 Equipo')
+      }, '👥 Equipo / Agregar Profesional')
     ),
 
     // Equipo chips
