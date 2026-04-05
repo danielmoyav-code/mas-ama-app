@@ -7,6 +7,17 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 // ─────────────────────────────────────────────────────────────────────
 // STORAGE
 // ─────────────────────────────────────────────────────────────────────
+
+// Inject btn-purple style if not present
+(function(){
+  if(!document.getElementById('masama-extra-styles')){
+    const s=document.createElement('style');
+    s.id='masama-extra-styles';
+    s.textContent='.btn-purple{background:#7030A0;color:#fff}';
+    document.head.appendChild(s);
+  }
+})();
+
 const DB = {
   get:(k,d=null)=>{ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{return d;} },
   set:(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ console.error(e); } },
@@ -335,6 +346,104 @@ function PinScreen({onUnlock}){
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: INICIO
 // ─────────────────────────────────────────────────────────────────────
+
+
+
+// ─────────────────────────────────────────────────────────────────────
+// MINI CHART COMPONENTS (SVG, no external libs)
+// ─────────────────────────────────────────────────────────────────────
+function BarChart({data, color='#2E75B6', height=120, showValues=true}){
+  if(!data||!data.length) return null;
+  const max=Math.max(...data.map(d=>d.value),1);
+  const barW=Math.min(40, Math.floor(280/data.length)-6);
+  const totalW=data.length*(barW+6);
+
+  return React.createElement('svg',{
+    viewBox:`0 0 ${Math.max(totalW,280)} ${height+40}`,
+    style:{width:'100%',overflow:'visible'}
+  },
+    data.map((d,i)=>{
+      const bh=Math.max(4,Math.round((d.value/max)*(height-10)));
+      const x=i*(barW+6)+3;
+      const y=height-bh;
+      return React.createElement('g',{key:i},
+        React.createElement('rect',{x,y,width:barW,height:bh,rx:4,fill:d.color||color,opacity:.85}),
+        showValues&&d.value>0&&React.createElement('text',{
+          x:x+barW/2,y:y-4,textAnchor:'middle',fontSize:10,fontWeight:700,fill:'#333'
+        },d.value),
+        React.createElement('text',{
+          x:x+barW/2,y:height+14,textAnchor:'middle',fontSize:9,fill:'#666',
+        },d.label.length>7?d.label.slice(0,7)+'…':d.label)
+      );
+    })
+  );
+}
+
+function DonutChart({slices, size=120}){
+  const total=slices.reduce((s,d)=>s+d.value,0);
+  if(!total) return null;
+  const r=46; const cx=size/2; const cy=size/2;
+  let angle=-Math.PI/2;
+  const paths=slices.map(d=>{
+    const sweep=(d.value/total)*Math.PI*2;
+    const x1=cx+r*Math.cos(angle); const y1=cy+r*Math.sin(angle);
+    angle+=sweep;
+    const x2=cx+r*Math.cos(angle); const y2=cy+r*Math.sin(angle);
+    const large=sweep>Math.PI?1:0;
+    return {path:`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z`,
+            color:d.color, label:d.label, value:d.value};
+  });
+  return React.createElement('svg',{viewBox:`0 0 ${size} ${size}`,style:{width:size,height:size}},
+    paths.map((p,i)=>React.createElement('path',{key:i,d:p.path,fill:p.color,stroke:'#fff',strokeWidth:2})),
+    React.createElement('circle',{cx,cy,r:28,fill:'#fff'}),
+    React.createElement('text',{x:cx,y:cy+4,textAnchor:'middle',fontSize:12,fontWeight:800,fill:'#333'},total)
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// CLINICAL COMPARE COMPONENT
+// ─────────────────────────────────────────────────────────────────────
+function ClinicalCompare({label, pre, post, unit='', lowerIsBetter=true}){
+  const preN=parseFloat(pre); const postN=parseFloat(post);
+  const hasData=!isNaN(preN)&&!isNaN(postN);
+  let arrow='', arrowColor='#777', trend='';
+  if(hasData){
+    const improved=lowerIsBetter?(postN<preN):(postN>preN);
+    const same=postN===preN;
+    if(same){ arrow='→'; arrowColor='#ED7D31'; trend='Sin cambio'; }
+    else if(improved){ arrow='↓'; arrowColor='#375623'; trend='Mejoró'; }
+    else { arrow='↑'; arrowColor='#C00000'; trend='Empeoró'; }
+    if(!lowerIsBetter&&improved){ arrow='↑'; }
+    if(!lowerIsBetter&&!improved&&!same){ arrow='↓'; }
+  }
+  return React.createElement('div',{style:{
+    background:'#F8F9FA',borderRadius:10,padding:'10px 12px',marginBottom:8,
+    borderLeft:`4px solid ${hasData?(arrowColor==='#375623'?'#70AD47':arrowColor==='#C00000'?'#C00000':'#ED7D31'):'#ddd'}`
+  }},
+    React.createElement('div',{style:{fontSize:11,fontWeight:700,color:'#777',textTransform:'uppercase',marginBottom:4}},label),
+    React.createElement('div',{style:{display:'flex',alignItems:'center',gap:10}},
+      React.createElement('div',{style:{textAlign:'center',flex:1}},
+        React.createElement('div',{style:{fontSize:11,color:'#999'}}, 'PRE'),
+        React.createElement('div',{style:{fontSize:20,fontWeight:900,color:'#333'}},pre||'—',
+          pre&&React.createElement('span',{style:{fontSize:11,color:'#888',marginLeft:2}},unit))
+      ),
+      hasData&&React.createElement('div',{style:{fontSize:28,fontWeight:900,color:arrowColor}},arrow),
+      React.createElement('div',{style:{textAlign:'center',flex:1}},
+        React.createElement('div',{style:{fontSize:11,color:'#999'}},'POST'),
+        React.createElement('div',{style:{fontSize:20,fontWeight:900,color:postN&&arrowColor||'#333'}},post||'—',
+          post&&React.createElement('span',{style:{fontSize:11,color:'#888',marginLeft:2}},unit))
+      ),
+      hasData&&React.createElement('div',{style:{
+        fontSize:11,fontWeight:700,color:arrowColor,
+        background:arrowColor+'20',borderRadius:6,padding:'3px 7px'
+      }},trend)
+    )
+  );
+}
+
+
+
+
 function ViewInicio({patients,attendanceLog,onNav}){
   const total    =patients.length;
   const vencidos =patients.filter(p=>p.empamEstado?.includes('VENCIDO')).length;
@@ -342,7 +451,10 @@ function ViewInicio({patients,attendanceLog,onNav}){
   const bajo     =patients.filter(p=>p.alertaAsist?.includes('BAJO')).length;
   const nuevos   =patients.filter(p=>p.isNew).length;
   const hoyReg   =Object.keys(attendanceLog).filter(k=>k.startsWith(todayISO())).length;
+  const vigente  =patients.filter(p=>p.empamEstado?.includes('VIGENTE')).length;
+  const pendiente=patients.filter(p=>p.empamEstado?.includes('PEND')).length;
 
+  // Taller stats for bar chart
   const tallerStats={};
   patients.forEach(p=>{
     if(!p.taller) return;
@@ -351,7 +463,35 @@ function ViewInicio({patients,attendanceLog,onNav}){
     if(p.alertaAsist?.includes('BAJO')) tallerStats[p.taller].bajo++;
   });
 
+  // Age distribution
+  const ageRanges={'60-64':0,'65-69':0,'70-74':0,'75-79':0,'80+':0};
+  patients.forEach(p=>{
+    const e=Number(p.edad);
+    if(e>=60&&e<=64) ageRanges['60-64']++;
+    else if(e>=65&&e<=69) ageRanges['65-69']++;
+    else if(e>=70&&e<=74) ageRanges['70-74']++;
+    else if(e>=75&&e<=79) ageRanges['75-79']++;
+    else if(e>=80) ageRanges['80+']++;
+  });
+
+  const empamSlices=[
+    {label:'Vencido',value:vencidos,color:'#C00000'},
+    {label:'Pronto',value:prontos,color:'#ED7D31'},
+    {label:'Vigente',value:vigente,color:'#70AD47'},
+    {label:'Pendiente',value:pendiente,color:'#BBBBC0'},
+  ].filter(s=>s.value>0);
+
+  const tallerBarData=Object.entries(tallerStats)
+    .map(([t,s])=>({label:t,value:s.n,color:s.bajo>s.n*0.5?'#C00000':'#2E75B6'}))
+    .sort((a,b)=>b.value-a.value);
+
+  const ageBarData=Object.entries(ageRanges).map(([l,v])=>({label:l,value:v,color:'#7030A0'}));
+
+  const mujeres=patients.filter(p=>p.sexo==='M').length;
+  const hombres=patients.filter(p=>p.sexo==='H').length;
+
   return React.createElement('div',{className:'page'},
+    // KPIs
     React.createElement('div',{className:'kpi-grid'},
       React.createElement('div',{className:'kpi-card info'},
         React.createElement('div',{className:'kpi-val'},total),
@@ -367,12 +507,12 @@ function ViewInicio({patients,attendanceLog,onNav}){
         React.createElement('div',{className:'kpi-lbl'},'Nuevos'))
     ),
 
+    // Acceso rápido
     React.createElement('div',{className:'card'},
       React.createElement('div',{className:'card-title'},'⚡ Acceso rápido'),
       React.createElement('div',{className:'btn-row',style:{marginBottom:8}},
         React.createElement('button',{className:'btn btn-primary',onClick:()=>onNav('lista')},'📋 Pasar Lista'),
-        React.createElement('button',{className:'btn btn-red',onClick:()=>onNav('alertas')},
-          `🚨 Alertas (${vencidos+prontos})`)
+        React.createElement('button',{className:'btn btn-red',onClick:()=>onNav('alertas')},`🚨 Alertas (${vencidos+prontos})`)
       ),
       React.createElement('div',{className:'btn-row'},
         React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('nuevo')},'➕ Nuevo Paciente'),
@@ -380,33 +520,77 @@ function ViewInicio({patients,attendanceLog,onNav}){
       )
     ),
 
+    // Hoy
     hoyReg>0&&React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'✅ Registros de hoy'),
-      React.createElement('div',{style:{fontSize:16,fontWeight:800,color:'#375623'}},
-        `${hoyReg} asistencias marcadas hoy`)),
+      React.createElement('div',{className:'card-title'},'✅ Actividad de hoy'),
+      React.createElement('div',{style:{fontSize:18,fontWeight:800,color:'#375623'}},
+        `${hoyReg} asistencias marcadas`)),
 
-    Object.keys(tallerStats).length>0&&React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'🏃 Resumen por Taller'),
-      Object.entries(tallerStats).map(([t,s])=>
-        React.createElement('div',{key:t,style:{marginBottom:12}},
-          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:4}},
-            React.createElement('span',{style:{fontWeight:700,fontSize:13}},t),
-            React.createElement('span',{style:{fontSize:12,color:'#777'}},
-              `${s.n} pac.${s.bajo>0?` · ${s.bajo} bajo mín.`:''}`)),
-          React.createElement(ProgressBar,{value:s.n-s.bajo,max:s.n,
-            color:s.bajo>0?'#C00000':'#375623'})))
+    // EMPAM donut + stats
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'card-title'},'⚠️ Estado EMPAM'),
+      React.createElement('div',{style:{display:'flex',gap:16,alignItems:'center'}},
+        React.createElement(DonutChart,{slices:empamSlices,size:110}),
+        React.createElement('div',{style:{flex:1}},
+          [['🔴 Vencido',vencidos,'#C00000'],['🟡 Vence Pronto',prontos,'#ED7D31'],
+           ['🟢 Vigente',vigente,'#375623'],['⏳ Pendiente',pendiente,'#888']]
+            .map(([l,v,c])=>React.createElement('div',{key:l,style:{
+              display:'flex',justifyContent:'space-between',padding:'3px 0',
+              borderBottom:'1px solid #f0f0f0',fontSize:13
+            }},
+              React.createElement('span',{style:{color:c,fontWeight:600}},l),
+              React.createElement('span',{style:{fontWeight:800}},v)
+            ))
+        )
+      )
+    ),
+
+    // Sexo
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'card-title'},'👥 Distribución por Sexo'),
+      React.createElement('div',{style:{display:'flex',gap:12}},
+        React.createElement('div',{style:{flex:1,background:'#EDE0F7',borderRadius:10,padding:'12px',textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:28,fontWeight:900,color:'#7030A0'}},mujeres),
+          React.createElement('div',{style:{fontSize:12,color:'#7030A0',fontWeight:700}},'♀ Mujeres'),
+          React.createElement('div',{style:{fontSize:12,color:'#999'}},`${total?Math.round(mujeres/total*100):0}%`)
+        ),
+        React.createElement('div',{style:{flex:1,background:'#DDEEFF',borderRadius:10,padding:'12px',textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:28,fontWeight:900,color:'#2E75B6'}},hombres),
+          React.createElement('div',{style:{fontSize:12,color:'#2E75B6',fontWeight:700}},'♂ Hombres'),
+          React.createElement('div',{style:{fontSize:12,color:'#999'}},`${total?Math.round(hombres/total*100):0}%`)
+        )
+      )
+    ),
+
+    // Talleres bar chart
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'card-title'},'🏃 Pacientes por Taller'),
+      React.createElement(BarChart,{data:tallerBarData,height:100}),
+      React.createElement('div',{style:{fontSize:11,color:'#999',textAlign:'center',marginTop:4}},
+        'Azul = OK · Rojo = más del 50% bajo mínimo')
+    ),
+
+    // Edad bar chart
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'card-title'},'🎂 Distribución por Edad'),
+      React.createElement(BarChart,{data:ageBarData,height:90,color:'#7030A0'})
     )
   );
 }
 
+
+
+
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: PASAR LISTA
 // ─────────────────────────────────────────────────────────────────────
-function ViewLista({patients,attendanceLog,setAttendanceLog,toast}){
+function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,setSessionNotes}){
   const [step,setStep]=useState('taller');
   const [selTaller,setTaller]=useState('');
   const [selFecha,setFecha]=useState(todayISO());
   const [search,setSearch]=useState('');
+  const [notePatient,setNotePatient]=useState(null);
+  const [noteText,setNoteText]=useState('');
 
   const tallerPacs=useMemo(()=>
     patients.filter(p=>p.taller===selTaller&&
@@ -414,7 +598,10 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast}){
     [patients,selTaller,search]);
 
   function attKey(rut){ return `${selFecha}||${selTaller}||${rut}`; }
+  function noteKey(rut){ return `nota||${selFecha}||${selTaller}||${rut}`; }
   function getAtt(rut){ return attendanceLog[attKey(rut)]||null; }
+  function getNote(rut){ return (sessionNotes||{})[noteKey(rut)]||''; }
+
   function setAtt(rut,val){
     const k=attKey(rut); const next={...attendanceLog};
     if(next[k]===val) delete next[k]; else next[k]=val;
@@ -426,10 +613,18 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast}){
     setAttendanceLog(next); DB.set('attendanceLog',next);
     toast(val==='P'?'✅ Todos marcados Presente':'❌ Todos marcados Ausente');
   }
+  function saveNote(){
+    const k=noteKey(notePatient.rut||notePatient.id);
+    const next={...(sessionNotes||{}),[k]:noteText};
+    setSessionNotes(next); DB.set('sessionNotes',next);
+    setNotePatient(null); setNoteText('');
+    toast('📝 Nota guardada');
+  }
 
   const present=tallerPacs.filter(p=>getAtt(p.rut||p.id)==='P').length;
   const absent =tallerPacs.filter(p=>getAtt(p.rut||p.id)==='A').length;
   const sin    =tallerPacs.length-present-absent;
+  const conNota=tallerPacs.filter(p=>getNote(p.rut||p.id)).length;
 
   if(step==='taller') return React.createElement('div',{className:'page'},
     React.createElement('div',{className:'card'},
@@ -449,59 +644,95 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast}){
         React.createElement('input',{type:'date',value:selFecha,onChange:e=>setFecha(e.target.value)})),
       React.createElement('div',{className:'btn-row'},
         React.createElement('button',{className:'btn btn-ghost',onClick:()=>setStep('taller')},'← Volver'),
-        React.createElement('button',{className:'btn btn-primary',onClick:()=>setStep('lista'),disabled:!selFecha},
-          `Ver lista`)
+        React.createElement('button',{className:'btn btn-primary',onClick:()=>setStep('lista'),disabled:!selFecha},'Ver lista')
       )
     )
   );
 
   return React.createElement('div',{className:'page'},
+    // Header
     React.createElement('div',{className:'card',style:{marginBottom:10}},
-      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
         React.createElement('div',null,
           React.createElement('div',{style:{fontWeight:800,fontSize:15}},selTaller),
-          React.createElement('div',{style:{fontSize:13,color:'#777'}},selFecha)),
-        React.createElement('div',{style:{fontWeight:700,fontSize:14}},
+          React.createElement('div',{style:{fontSize:12,color:'#777'}},selFecha)),
+        React.createElement('div',{style:{fontWeight:700,fontSize:14,textAlign:'right'}},
           React.createElement('span',{style:{color:'#375623'}},`✅${present} `),
           React.createElement('span',{style:{color:'#C00000'}},`❌${absent} `),
           React.createElement('span',{style:{color:'#aaa'}},`○${sin}`)
         )
-      )
+      ),
+      conNota>0&&React.createElement('div',{style:{fontSize:12,color:'#7030A0',fontWeight:600}},
+        `📝 ${conNota} nota${conNota>1?'s':''} de sesión`)
     ),
+    // Actions
     React.createElement('div',{className:'btn-row',style:{marginBottom:10}},
       React.createElement('button',{className:'btn btn-ghost btn-sm',onClick:()=>setStep('taller')},'← Taller'),
       React.createElement('button',{className:'btn btn-green btn-sm',onClick:()=>marcarTodos('P')},'✅ Todos Pres.'),
       React.createElement('button',{className:'btn btn-red btn-sm',onClick:()=>marcarTodos('A')},'❌ Todos Aus.')
     ),
+    // Search
     React.createElement('div',{className:'search-wrap'},
       React.createElement('span',{className:'search-icon'},'🔍'),
       React.createElement('input',{type:'text',placeholder:'Buscar...',value:search,onChange:e=>setSearch(e.target.value)})
     ),
+    // List
     tallerPacs.length===0
       ?React.createElement('div',{className:'empty-state'},
           React.createElement('div',{className:'emoji'},'👥'),
           React.createElement('p',null,'Sin pacientes para este taller'))
       :tallerPacs.map(p=>{
-        const key=p.rut||p.id; const att=getAtt(key);
-        return React.createElement('div',{key:p.id,className:'att-row'},
+        const key=p.rut||p.id; const att=getAtt(key); const nota=getNote(key);
+        return React.createElement('div',{key:p.id,className:'att-row',style:{flexWrap:'wrap',gap:6}},
           React.createElement(Avatar,{sexo:p.sexo,nombre:p.nombre}),
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{className:'att-name'},p.nombre),
             React.createElement('div',{className:'att-sub'},
-              `${p.edad?p.edad+' años · ':''}${p.empamEstado||''}`)
+              `${p.edad?p.edad+' años · ':''}${p.empamEstado||''}`),
+            nota&&React.createElement('div',{style:{fontSize:11,color:'#7030A0',marginTop:2}},`📝 ${nota.slice(0,40)}${nota.length>40?'...':''}`)
           ),
-          React.createElement('div',{className:'att-toggle'},
-            React.createElement('button',{className:`att-btn ${att==='P'?'p-on':'p-off'}`,onClick:()=>setAtt(key,'P')},att==='P'?'✅':'P'),
-            React.createElement('button',{className:`att-btn ${att==='A'?'a-on':'a-off'}`,onClick:()=>setAtt(key,'A')},att==='A'?'❌':'A')
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6}},
+            React.createElement('button',{
+              onClick:()=>{ setNotePatient(p); setNoteText(getNote(key)); },
+              style:{background:'none',border:'none',fontSize:18,cursor:'pointer',
+                     color:nota?'#7030A0':'#ccc',padding:'4px'}
+            },'📝'),
+            React.createElement('div',{className:'att-toggle'},
+              React.createElement('button',{className:`att-btn ${att==='P'?'p-on':'p-off'}`,onClick:()=>setAtt(key,'P')},att==='P'?'✅':'P'),
+              React.createElement('button',{className:`att-btn ${att==='A'?'a-on':'a-off'}`,onClick:()=>setAtt(key,'A')},att==='A'?'❌':'A')
+            )
           )
         );
       }),
+    // Save
     React.createElement('div',{style:{marginTop:14}},
       React.createElement('button',{className:'btn btn-green',
         onClick:()=>toast(`💾 Lista guardada — ${present} presentes, ${absent} ausentes`)},
-        '💾 Confirmar Lista'))
+        '💾 Confirmar Lista')),
+
+    // Note modal
+    notePatient&&React.createElement('div',{className:'overlay',onClick:e=>{ if(e.target===e.currentTarget) setNotePatient(null); }},
+      React.createElement('div',{className:'sheet'},
+        React.createElement('div',{className:'sheet-handle'}),
+        React.createElement('div',{style:{fontWeight:800,fontSize:16,marginBottom:4}},`📝 Nota — ${notePatient.nombre.split(' ').slice(0,2).join(' ')}`),
+        React.createElement('div',{style:{fontSize:12,color:'#777',marginBottom:12}},`Sesión: ${selFecha}`),
+        React.createElement('textarea',{
+          value:noteText, onChange:e=>setNoteText(e.target.value),
+          placeholder:'Observaciones de la sesión, comportamiento, dolor, limitaciones...',
+          style:{width:'100%',minHeight:120,padding:12,border:'1.5px solid #E0E0E0',
+                 borderRadius:12,fontSize:14,resize:'none',outline:'none'}
+        }),
+        React.createElement('div',{className:'btn-row',style:{marginTop:12}},
+          React.createElement('button',{className:'btn btn-ghost',style:{flex:1},onClick:()=>setNotePatient(null)},'Cancelar'),
+          React.createElement('button',{className:'btn btn-purple',style:{flex:2},onClick:saveNote},'💾 Guardar Nota')
+        )
+      )
+    )
   );
 }
+
+
+
 
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: NUEVO PACIENTE (wizard 4 pasos)
@@ -828,7 +1059,23 @@ function ViewFicha({patient,patients,setPatients,toast}){
         React.createElement(AsistChip,{alerta:patient.alertaAsist,
           presencias:patient.totalPresencias,total:patient.totalSesiones}),
         patient.isNew&&React.createElement(Chip,{color:'green'},'✨ Nuevo')
-      )
+      ),
+      React.createElement('button',{
+        onClick:()=>{
+          const txt=`*MAS AMA — Resumen Paciente*%0A` +
+            `Nombre: ${patient.nombre}%0A` +
+            `RUT: ${patient.rut}%0A` +
+            `Taller: ${patient.taller}%0A` +
+            `EMPAM: ${patient.empamEstado||'—'}%0A` +
+            `Vence: ${patient.empamFecha||'—'}%0A` +
+            `TUG Pre: ${patient.tugPre||'—'} → Post: ${patient.tugPost||'—'}%0A` +
+            `HAQ Pre: ${patient.haqPre||'—'} → Post: ${patient.haqPost||'—'}%0A` +
+            `Asistencia: ${patient.totalPresencias||0}/${patient.totalSesiones||24} sesiones`;
+          window.open(`https://wa.me/?text=${txt}`,'_blank');
+        },
+        style:{marginTop:10,background:'#25D366',color:'#fff',border:'none',borderRadius:10,
+               padding:'8px 16px',fontSize:13,fontWeight:700,cursor:'pointer',width:'auto'}
+      },'📲 Compartir por WhatsApp')
     ),
     React.createElement('div',{className:'tabs'},
       [['general','General'],['clinico','Clínico'],['asistencia','Asistencia'],['editar','✏️ Editar']]
@@ -865,25 +1112,21 @@ function ViewFicha({patient,patients,setPatients,toast}){
 
     // CLÍNICO
     tab==='clinico'&&React.createElement('div',null,
-      React.createElement(SectionHdr,null,'Evaluación PRE'),
+      React.createElement(SectionHdr,null,'Comparación PRE → POST'),
+      React.createElement(ClinicalCompare,{label:'TUG (Timed Up and Go)',pre:patient.tugPre,post:patient.tugPost,unit:'seg',lowerIsBetter:true}),
+      React.createElement(ClinicalCompare,{label:'HAQ (Cuestionario)',pre:patient.haqPre,post:patient.haqPost,unit:'pts',lowerIsBetter:true}),
+      React.createElement(ClinicalCompare,{label:'EUP Derecho',pre:patient.eupDerPre,post:patient.eupDerPost,unit:'seg',lowerIsBetter:false}),
+      React.createElement(ClinicalCompare,{label:'EUP Izquierdo',pre:patient.eupIzqPre,post:patient.eupIzqPost,unit:'seg',lowerIsBetter:false}),
+      React.createElement(SectionHdr,null,'Datos adicionales PRE'),
       React.createElement('div',{className:'detail-grid'},
-        React.createElement(DetailItem,{label:'TUG Pre (seg)',value:patient.tugPre}),
-        React.createElement(DetailItem,{label:'HAQ Pre',value:patient.haqPre}),
-        React.createElement(DetailItem,{label:'EUP Der Pre',value:patient.eupDerPre}),
-        React.createElement(DetailItem,{label:'EUP Izq Pre',value:patient.eupIzqPre}),
         React.createElement(DetailItem,{label:'Vel. Derecha',value:patient.velDerPre}),
         React.createElement(DetailItem,{label:'Vel. Izquierda',value:patient.velIzqPre}),
         React.createElement(DetailItem,{label:'CAT Interna',value:patient.catInt}),
-        React.createElement(DetailItem,{label:'CAT Externa',value:patient.catExt})
+        React.createElement(DetailItem,{label:'CAT Externa',value:patient.catExt}),
+        React.createElement(DetailItem,{label:'Dolor D° Pre',value:patient.dolorDPre}),
+        React.createElement(DetailItem,{label:'Dolor I° Pre',value:patient.dolorIPre})
       ),
-      React.createElement(SectionHdr,null,'Evaluación POST'),
-      React.createElement('div',{className:'detail-grid'},
-        React.createElement(DetailItem,{label:'TUG Post',value:patient.tugPost}),
-        React.createElement(DetailItem,{label:'HAQ Post',value:patient.haqPost}),
-        React.createElement(DetailItem,{label:'EUP Der Post',value:patient.eupDerPost}),
-        React.createElement(DetailItem,{label:'EUP Izq Post',value:patient.eupIzqPost})
-      ),
-      React.createElement(SectionHdr,null,'Resultados'),
+      React.createElement(SectionHdr,null,'Resultados Finales'),
       React.createElement('div',{className:'detail-grid'},
         [['TUG',patient.resTug],['EUP Der.',patient.resEupDer],
          ['EUP Izq.',patient.resEupIzq],['Funcional',patient.estadoFunc]]
@@ -892,6 +1135,7 @@ function ViewFicha({patient,patients,setPatients,toast}){
             color:v==='MEJ'?'#375623':v==='A'?'#C00000':undefined}))
       )
     ),
+
 
     // ASISTENCIA
     tab==='asistencia'&&React.createElement('div',null,
@@ -1182,6 +1426,7 @@ function App(){
   const [view,setView]         = useState('inicio');
   const [patients,setPatients] = useState(()=>DB.get('patients',[]));
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
+  const [sessionNotes,setSN]   = useState(()=>DB.get('sessionNotes',{}));
   const [selPatient,setSel]    = useState(null);
   const [toastMsg,setToast]    = useState('');
 
@@ -1237,7 +1482,7 @@ function App(){
             style:{maxWidth:280,margin:'0 auto'},onClick:()=>setView('config')},
             '📂 Importar Maestro'))
       :view==='inicio'   ?React.createElement(ViewInicio,{patients,attendanceLog,onNav:setView})
-      :view==='lista'    ?React.createElement(ViewLista,{patients,attendanceLog,setAttendanceLog:setAL,toast})
+      :view==='lista'    ?React.createElement(ViewLista,{patients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
       :view==='pacientes'?React.createElement(ViewPacientes,{patients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
       :view==='nuevo'    ?React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:goBack})
       :view==='ficha'    ?React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
