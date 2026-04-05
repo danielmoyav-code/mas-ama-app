@@ -3,43 +3,171 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#1F3864">
+  <meta name="theme-color" content="#1A3A5C">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MAS AMA">
-  <title>MAS AMA</title>
+  <meta name="description" content="Gestión del Programa MAS AMA — CESFAM Félix de Amesti">
+  <title>MAS AMA Pro</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/styles.css">
+
   <style>
-    #splash{position:fixed;inset:0;background:linear-gradient(160deg,#1F3864,#2E75B6);
-            display:flex;flex-direction:column;align-items:center;justify-content:center;
-            color:#fff;font-family:'Segoe UI',Arial,sans-serif;z-index:9999}
-    #splash .logo{font-size:64px;margin-bottom:16px}
-    #splash h2{font-size:26px;font-weight:900}
-    #splash p{font-size:14px;opacity:.6;margin-top:8px}
-    @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
-    .pin-shake{animation:shake .4s ease}
+    /* ── SPLASH SCREEN ── */
+    #splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: linear-gradient(160deg, #1A3A5C 0%, #1F4E79 50%, #17A589 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-family: 'Segoe UI', system-ui, Arial, sans-serif;
+      transition: opacity .4s ease;
+    }
+
+    /* SVG adulto mayor caminando */
+    .splash-figure { margin-bottom: 20px; filter: drop-shadow(0 8px 24px rgba(0,0,0,.3)); }
+
+    .splash-logo {
+      font-size: 28px; font-weight: 900; color: #fff;
+      letter-spacing: .5px; margin-bottom: 4px;
+    }
+    .splash-logo span { color: #58D68D; }
+    .splash-sub {
+      font-size: 13px; color: rgba(255,255,255,.65);
+      margin-bottom: 32px; text-align: center; line-height: 1.4;
+    }
+    .splash-loader {
+      display: flex; gap: 8px;
+    }
+    .splash-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(255,255,255,.4);
+      animation: dotBounce .9s infinite;
+    }
+    .splash-dot:nth-child(2) { animation-delay: .15s; }
+    .splash-dot:nth-child(3) { animation-delay: .3s; }
+    @keyframes dotBounce {
+      0%,80%,100% { transform: scale(.7); background: rgba(255,255,255,.3); }
+      40% { transform: scale(1.2); background: #58D68D; }
+    }
+
+    .splash-cesfam {
+      position: absolute; bottom: 32px;
+      font-size: 11px; color: rgba(255,255,255,.4);
+      text-align: center; letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+
+    /* walk animation for figure */
+    @keyframes walkCycle {
+      0%   { transform: translateY(0px) rotate(0deg); }
+      25%  { transform: translateY(-4px) rotate(.5deg); }
+      50%  { transform: translateY(0px) rotate(0deg); }
+      75%  { transform: translateY(-4px) rotate(-.5deg); }
+      100% { transform: translateY(0px) rotate(0deg); }
+    }
+    .splash-figure svg { animation: walkCycle 1.2s ease-in-out infinite; }
   </style>
 </head>
 <body>
+
+  <!-- ── SPLASH SCREEN ── -->
   <div id="splash">
-    <div class="logo">🏃</div>
-    <h2>MAS AMA</h2>
-    <p>Cargando...</p>
+    <!-- SVG Adulto Mayor haciendo ejercicio -->
+    <div class="splash-figure">
+      <svg width="140" height="160" viewBox="0 0 140 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Fondo círculo -->
+        <circle cx="70" cy="80" r="65" fill="rgba(255,255,255,.1)"/>
+
+        <!-- Bastón -->
+        <line x1="95" y1="80" x2="108" y2="135" stroke="rgba(255,255,255,.6)" stroke-width="3.5" stroke-linecap="round"/>
+
+        <!-- Cuerpo adulto mayor -->
+        <!-- Cabeza -->
+        <circle cx="68" cy="38" r="18" fill="#FDBCB4"/>
+        <!-- Pelo blanco -->
+        <ellipse cx="68" cy="26" rx="17" ry="9" fill="white" opacity=".9"/>
+        <ellipse cx="58" cy="30" rx="8" ry="5" fill="white" opacity=".8"/>
+        <ellipse cx="78" cy="30" rx="8" ry="5" fill="white" opacity=".8"/>
+
+        <!-- Cara -->
+        <circle cx="62" cy="38" r="2.5" fill="#8B5A4A"/>
+        <circle cx="74" cy="38" r="2.5" fill="#8B5A4A"/>
+        <!-- Sonrisa -->
+        <path d="M62 46 Q68 52 74 46" stroke="#8B5A4A" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <!-- Arrugas -->
+        <path d="M58 35 Q60 33 62 35" stroke="#C4A088" stroke-width="1.2" fill="none"/>
+        <path d="M74 35 Q76 33 78 35" stroke="#C4A088" stroke-width="1.2" fill="none"/>
+
+        <!-- Cuello -->
+        <rect x="63" y="54" width="10" height="8" rx="3" fill="#FDBCB4"/>
+
+        <!-- Torso / ropa -->
+        <path d="M42 62 Q55 58 68 60 Q81 58 94 62 L91 105 Q80 110 68 108 Q56 110 45 105 Z"
+              fill="#2471A3"/>
+        <!-- Logo en polera -->
+        <text x="56" y="88" font-size="9" fill="rgba(255,255,255,.7)" font-weight="bold">MAS AMA</text>
+
+        <!-- Brazo izquierdo -->
+        <path d="M42 65 Q32 78 35 95" stroke="#FDBCB4" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- Mano izquierda -->
+        <circle cx="35" cy="97" r="6" fill="#FDBCB4"/>
+
+        <!-- Brazo derecho — levantado sosteniendo bastón -->
+        <path d="M94 65 Q100 72 100 82" stroke="#FDBCB4" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- Mano derecha -->
+        <circle cx="100" cy="84" r="6" fill="#FDBCB4"/>
+
+        <!-- Pantalón -->
+        <path d="M45 105 L52 145 L65 145 L68 118 L71 145 L84 145 L91 105 Z" fill="#1A3A5C"/>
+
+        <!-- Zapatos -->
+        <ellipse cx="52" cy="146" rx="10" ry="5" fill="#2C3E50"/>
+        <ellipse cx="84" cy="146" rx="10" ry="5" fill="#2C3E50"/>
+
+        <!-- Destellos/vida -->
+        <circle cx="30" cy="50" r="4" fill="#58D68D" opacity=".7"/>
+        <circle cx="108" cy="45" r="3" fill="#F4D03F" opacity=".7"/>
+        <circle cx="25" cy="110" r="3" fill="#58D68D" opacity=".5"/>
+
+        <!-- Texto motivacional -->
+        <text x="70" y="155" text-anchor="middle" font-size="10"
+              fill="rgba(255,255,255,.8)" font-weight="bold">¡Activo y Autovalente!</text>
+      </svg>
+    </div>
+
+    <div class="splash-logo">MAS <span>AMA</span> Pro</div>
+    <div class="splash-sub">
+      Programa Más Adultos Mayores Autovalentes<br>
+      CESFAM Félix de Amesti · Macul
+    </div>
+    <div class="splash-loader">
+      <div class="splash-dot"></div>
+      <div class="splash-dot"></div>
+      <div class="splash-dot"></div>
+    </div>
+    <div class="splash-cesfam">Kinesiólogos · Terapeutas · Duplas</div>
   </div>
+
+  <!-- ── APP MOUNT ── -->
   <div id="root"></div>
+
+  <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script type="text/babel" src="/app.js"></script>
+
   <script>
-    window.addEventListener('load',()=>{
-      setTimeout(()=>{
-        const s=document.getElementById('splash');
-        if(s){s.style.opacity='0';s.style.transition='opacity .3s';setTimeout(()=>s.remove(),300);}
-      },800);
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const s = document.getElementById('splash');
+        if (s) {
+          s.style.opacity = '0';
+          setTimeout(() => s.remove(), 400);
+        }
+      }, 2200);
     });
   </script>
 </body>
