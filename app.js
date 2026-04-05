@@ -1957,6 +1957,453 @@ function ViewRayen({ patients, attendanceLog, toast }) {
 }
 
 
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MÓDULO RUTINAS DE SESIÓN
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── BIBLIOTECA DE EJERCICIOS MAS AMA ────────────────────────────────
+const EJERCICIOS_FISICOS = [
+  // CALENTAMIENTO
+  { id:'f01', cat:'🔥 Calentamiento', nombre:'Marcha en el lugar', desc:'Levantando rodillas, brazos alternos', min:3, mat:'' },
+  { id:'f02', cat:'🔥 Calentamiento', nombre:'Rotación de hombros', desc:'Circular hacia adelante y atrás, 10 rep cada sentido', min:2, mat:'' },
+  { id:'f03', cat:'🔥 Calentamiento', nombre:'Flexión y extensión de tobillo', desc:'Sentado, punta-talón alternado, 15 rep', min:2, mat:'' },
+  { id:'f04', cat:'🔥 Calentamiento', nombre:'Rotación de cuello', desc:'Suave, media luna de hombro a hombro, 5 rep', min:2, mat:'' },
+  // FUERZA
+  { id:'f05', cat:'💪 Fuerza', nombre:'Sentadilla en silla', desc:'Pararse y sentarse con apoyo de silla, 3×10', min:5, mat:'Silla' },
+  { id:'f06', cat:'💪 Fuerza', nombre:'Press de hombros con banda', desc:'Banda elástica, empuje hacia arriba, 3×12', min:5, mat:'Banda elástica' },
+  { id:'f07', cat:'💪 Fuerza', nombre:'Curl de bíceps con banda', desc:'Flexión de codo con banda, 3×12', min:5, mat:'Banda elástica' },
+  { id:'f08', cat:'💪 Fuerza', nombre:'Extensión de rodilla sentado', desc:'Extender pierna, sostener 3 seg, 3×10 cada lado', min:5, mat:'Silla' },
+  { id:'f09', cat:'💪 Fuerza', nombre:'Elevación de talones de pie', desc:'Apoyo en silla, subir talones, 3×15', min:4, mat:'Silla' },
+  { id:'f10', cat:'💪 Fuerza', nombre:'Abducción de cadera con banda', desc:'De pie, separar pierna lateral, 3×10', min:5, mat:'Banda elástica' },
+  // EQUILIBRIO
+  { id:'f11', cat:'⚖️ Equilibrio', nombre:'Apoyo unipodal', desc:'Un pie, apoyo silla si necesario, 30 seg cada lado', min:3, mat:'Silla' },
+  { id:'f12', cat:'⚖️ Equilibrio', nombre:'Tándem estático', desc:'Un pie delante del otro, 30 seg, ojos abiertos/cerrados', min:3, mat:'' },
+  { id:'f13', cat:'⚖️ Equilibrio', nombre:'Marcha en tándem', desc:'Caminar en línea recta talón-punta, 5 metros ida y vuelta', min:4, mat:'' },
+  { id:'f14', cat:'⚖️ Equilibrio', nombre:'Transferencia de peso lateral', desc:'Desplazar peso de pie a pie, lento y controlado, 10 rep', min:3, mat:'' },
+  { id:'f15', cat:'⚖️ Equilibrio', nombre:'Alcance funcional', desc:'Alcanzar objeto al frente sin mover pies, 10 rep', min:3, mat:'Objeto' },
+  // FLEXIBILIDAD
+  { id:'f16', cat:'🧘 Flexibilidad', nombre:'Estiramiento isquiotibiales', desc:'Sentado, extender pierna, inclinar tronco, 30 seg cada lado', min:3, mat:'Silla' },
+  { id:'f17', cat:'🧘 Flexibilidad', nombre:'Estiramiento de cuádriceps', desc:'De pie con apoyo, talón al glúteo, 30 seg cada lado', min:3, mat:'Silla' },
+  { id:'f18', cat:'🧘 Flexibilidad', nombre:'Rotación de tronco sentado', desc:'Manos en hombros, girar tronco, 10 rep cada lado', min:3, mat:'Silla' },
+  { id:'f19', cat:'🧘 Flexibilidad', nombre:'Estiramiento de pantorrilla', desc:'Un pie atrás, talón al suelo, 30 seg cada lado', min:3, mat:'Pared' },
+  // VUELTA A LA CALMA
+  { id:'f20', cat:'🌿 Vuelta a la calma', nombre:'Respiración diafragmática', desc:'Mano en abdomen, inhalar 4s / exhalar 6s, 5 rep', min:3, mat:'' },
+  { id:'f21', cat:'🌿 Vuelta a la calma', nombre:'Estiramiento cervical', desc:'Inclinar cabeza lateral suave, 30 seg cada lado', min:2, mat:'' },
+  { id:'f22', cat:'🌿 Vuelta a la calma', nombre:'Estiramiento de brazos y espalda', desc:'Entrelazar manos, empujar al frente, 30 seg', min:2, mat:'' },
+];
+
+const EJERCICIOS_COGNITIVOS = [
+  // MEMORIA
+  { id:'c01', cat:'🧠 Memoria', nombre:'Secuencia de palabras', desc:'Leer 5 palabras, esperar 2 min, recordar. Aumentar dificultad', min:5, mat:'Cuaderno' },
+  { id:'c02', cat:'🧠 Memoria', nombre:'Historia con detalles', desc:'Contar historia breve, preguntar detalles específicos', min:7, mat:'' },
+  { id:'c03', cat:'🧠 Memoria', nombre:'Recuerdo de lista de compras', desc:'Memorizar 8 productos, distractores, recordar', min:5, mat:'Cuaderno' },
+  { id:'c04', cat:'🧠 Memoria', nombre:'Memoria episódica', desc:'¿Qué hicieron el fin de semana? Detalles: lugar, personas, hora', min:5, mat:'' },
+  // ATENCIÓN
+  { id:'c05', cat:'🎯 Atención', nombre:'Búsqueda de letras', desc:'Tachar letra específica en texto, contar errores y tiempo', min:5, mat:'Hoja, lápiz' },
+  { id:'c06', cat:'🎯 Atención', nombre:'Secuencia numérica', desc:'Contar de 3 en 3 desde 1 hasta 30, luego al revés', min:4, mat:'' },
+  { id:'c07', cat:'🎯 Atención', nombre:'Cancelación de símbolos', desc:'Marcar símbolo específico entre varios, contra el tiempo', min:5, mat:'Hoja preparada' },
+  { id:'c08', cat:'🎯 Atención', nombre:'Dígitos directo e inverso', desc:'Repetir secuencia de números, luego en orden inverso', min:4, mat:'' },
+  // LENGUAJE
+  { id:'c09', cat:'💬 Lenguaje', nombre:'Fluidez verbal semántica', desc:'Nombrar animales en 1 minuto. Normal: >12 palabras', min:3, mat:'Cronómetro' },
+  { id:'c10', cat:'💬 Lenguaje', nombre:'Denominación de objetos', desc:'Mostrar imágenes, nombrar correctamente', min:5, mat:'Imágenes' },
+  { id:'c11', cat:'💬 Lenguaje', nombre:'Completar refranes', desc:'Iniciar refrán conocido, completar. Ej: "No por mucho madrugar..."', min:5, mat:'' },
+  { id:'c12', cat:'💬 Lenguaje', nombre:'Categorías y ejemplos', desc:'Decir 3 frutas, 3 países, 3 animales marinos, etc.', min:5, mat:'' },
+  // FUNCIONES EJECUTIVAS
+  { id:'c13', cat:'⚙️ Funciones Ejecutivas', nombre:'Stroop color-palabra', desc:'Leer color de tinta (no la palabra). Versión básica adaptada', min:5, mat:'Hoja preparada' },
+  { id:'c14', cat:'⚙️ Funciones Ejecutivas', nombre:'Torre de bloques', desc:'Construir torre siguiendo modelo de 5 pasos', min:7, mat:'Bloques o fichas' },
+  { id:'c15', cat:'⚙️ Funciones Ejecutivas', nombre:'Planificación de actividad', desc:'Organizar pasos para hacer un sándwich/ir al banco', min:5, mat:'' },
+  // HABILIDADES VISOESPACIALES
+  { id:'c16', cat:'🗺️ Visoespacial', nombre:'Copia de figura', desc:'Copiar figura geométrica compleja, evaluar planificación', min:5, mat:'Hoja, lápiz' },
+  { id:'c17', cat:'🗺️ Visoespacial', nombre:'Reloj', desc:'Dibujar reloj marcando una hora específica (ej: 11:10)', min:5, mat:'Hoja, lápiz' },
+  { id:'c18', cat:'🗺️ Visoespacial', nombre:'Rompecabezas verbal', desc:'Describir objeto, adivinar cuál es (adivinanzas)', min:5, mat:'' },
+  // CÁLCULO
+  { id:'c19', cat:'🔢 Cálculo', nombre:'Operaciones simples', desc:'Sumas y restas de 2 cifras, adaptado al nivel del grupo', min:5, mat:'Cuaderno' },
+  { id:'c20', cat:'🔢 Cálculo', nombre:'Problemas cotidianos', desc:'¿Cuánto vueldo de $1000 si compro X? Situaciones reales', min:5, mat:'' },
+];
+
+// ── RUTINA SUGERIDA POR DEFECTO ──────────────────────────────────────
+const RUTINA_SUGERIDA_FISICA = ['f01','f05','f11','f06','f16','f20'];
+const RUTINA_SUGERIDA_COG    = ['c01','c09','c05'];
+
+// ── HELPER: key de sesión ────────────────────────────────────────────
+function sessionKey(taller, fecha) { return `sesion||${taller}||${fecha}`; }
+
+// ── COMPONENTE: EJERCICIO CARD ───────────────────────────────────────
+function EjercicioCard({ ej, selected, onToggle, compact }) {
+  return React.createElement('div', {
+    onClick: () => onToggle(ej.id),
+    style: {
+      background: selected ? '#EBF4FF' : '#fff',
+      border: `2px solid ${selected ? '#2E75B6' : '#E0E0E0'}`,
+      borderRadius: 12, padding: compact ? '10px 12px' : '12px 14px',
+      marginBottom: 8, cursor: 'pointer', transition: 'all .15s',
+    }
+  },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 10 } },
+      React.createElement('div', {
+        style: {
+          width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+          background: selected ? '#2E75B6' : '#E0E0E0',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, color: '#fff', fontWeight: 800,
+        }
+      }, selected ? '✓' : ''),
+      React.createElement('div', { style: { flex: 1 } },
+        React.createElement('div', { style: { fontWeight: 700, fontSize: 14, color: selected ? '#1F3864' : '#222' } },
+          ej.nombre),
+        !compact && React.createElement('div', { style: { fontSize: 12, color: '#666', marginTop: 3, lineHeight: 1.4 } },
+          ej.desc),
+        React.createElement('div', { style: { display: 'flex', gap: 8, marginTop: 4 } },
+          React.createElement('span', { style: { fontSize: 11, color: '#888' } }, `⏱ ${ej.min} min`),
+          ej.mat && React.createElement('span', { style: { fontSize: 11, color: '#888' } }, `📦 ${ej.mat}`)
+        )
+      )
+    )
+  );
+}
+
+// ── COMPONENTE: HISTORIAL CARD ───────────────────────────────────────
+function SesionHistorialCard({ sesion, onPress }) {
+  const nFis = sesion.fisicos?.length || 0;
+  const nCog = sesion.cognitivos?.length || 0;
+  const durTotal = [...(sesion.fisicos||[]), ...(sesion.cognitivos||[])]
+    .reduce((s, id) => {
+      const ej = [...EJERCICIOS_FISICOS, ...EJERCICIOS_COGNITIVOS].find(e => e.id === id);
+      return s + (ej?.min || 0);
+    }, 0);
+
+  return React.createElement('div', {
+    style: {
+      background: '#fff', borderRadius: 12, padding: '12px 14px',
+      boxShadow: '0 2px 10px rgba(0,0,0,.07)', marginBottom: 8,
+      cursor: onPress ? 'pointer' : 'default', borderLeft: '4px solid #2E75B6',
+    },
+    onClick: onPress
+  },
+    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 6 } },
+      React.createElement('div', { style: { fontWeight: 800, fontSize: 14 } }, formatDate(sesion.fecha)),
+      React.createElement('div', { style: { fontSize: 12, color: '#888' } }, `~${durTotal} min`)
+    ),
+    React.createElement('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+      nFis > 0 && React.createElement('span', {
+        style: { background: '#EBF4FF', color: '#2E75B6', borderRadius: 20,
+                 padding: '3px 10px', fontSize: 12, fontWeight: 700 }
+      }, `💪 ${nFis} físicos`),
+      nCog > 0 && React.createElement('span', {
+        style: { background: '#EDE0F7', color: '#7030A0', borderRadius: 20,
+                 padding: '3px 10px', fontSize: 12, fontWeight: 700 }
+      }, `🧠 ${nCog} cognitivos`),
+      sesion.notas && React.createElement('span', {
+        style: { background: '#FFF9E6', color: '#7A5C00', borderRadius: 20,
+                 padding: '3px 10px', fontSize: 12 }
+      }, '📝 Con notas')
+    ),
+    sesion.notas && React.createElement('div', {
+      style: { marginTop: 6, fontSize: 12, color: '#555', fontStyle: 'italic',
+               borderTop: '1px solid #f0f0f0', paddingTop: 6 }
+    }, `"${sesion.notas.slice(0, 80)}${sesion.notas.length > 80 ? '...' : ''}"`)
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  VIEW: RUTINAS
+// ═══════════════════════════════════════════════════════════════════════
+function ViewRutinas({ sessionLog, setSessionLog, toast }) {
+  const [tab, setTab]           = useState('hoy');
+  const [selTaller, setTaller]  = useState('');
+  const [selFecha, setFecha]    = useState(todayISO());
+  const [step, setStep]         = useState('taller'); // taller→tipo→seleccion→notas
+  const [tipo, setTipo]         = useState('fisico'); // fisico|cognitivo
+  const [selFis, setSelFis]     = useState([]);
+  const [selCog, setSelCog]     = useState([]);
+  const [notas, setNotas]       = useState('');
+  const [filterCat, setFilter]  = useState('');
+  const [detailSesion, setDetail] = useState(null);
+
+  const currentKey = sessionKey(selTaller, selFecha);
+
+  // Load existing session if any
+  useEffect(() => {
+    if (selTaller && selFecha) {
+      const existing = (sessionLog || {})[currentKey];
+      if (existing) {
+        setSelFis(existing.fisicos || []);
+        setSelCog(existing.cognitivos || []);
+        setNotas(existing.notas || '');
+      } else {
+        setSelFis([]); setSelCog([]); setNotas('');
+      }
+    }
+  }, [selTaller, selFecha]);
+
+  // All sessions sorted by date desc
+  const allSessions = Object.values(sessionLog || {})
+    .filter(s => !selTaller || s.taller === selTaller)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  // Last session for this taller (for reference)
+  const lastSession = Object.values(sessionLog || {})
+    .filter(s => s.taller === selTaller && s.fecha < selFecha)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+
+  function toggleFis(id) {
+    setSelFis(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+  function toggleCog(id) {
+    setSelCog(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  function usarSugerida() {
+    setSelFis(RUTINA_SUGERIDA_FISICA);
+    setSelCog(RUTINA_SUGERIDA_COG);
+    toast('✅ Rutina sugerida cargada');
+  }
+
+  function usarAnterior() {
+    if (!lastSession) return;
+    setSelFis(lastSession.fisicos || []);
+    setSelCog(lastSession.cognitivos || []);
+    toast('✅ Rutina anterior cargada');
+  }
+
+  function guardar() {
+    if (!selTaller || !selFecha) { toast('❌ Selecciona taller y fecha'); return; }
+    if (selFis.length === 0 && selCog.length === 0) { toast('❌ Selecciona al menos un ejercicio'); return; }
+    const next = { ...(sessionLog || {}), [currentKey]: {
+      taller: selTaller, fecha: selFecha,
+      fisicos: selFis, cognitivos: selCog, notas,
+      savedAt: new Date().toISOString()
+    }};
+    setSessionLog(next); DB.set('sessionLog', next);
+    toast(`💾 Sesión guardada — ${selFis.length} físicos, ${selCog.length} cognitivos`);
+    setStep('taller');
+  }
+
+  // Duration calc
+  const durFis = selFis.reduce((s, id) => {
+    const e = EJERCICIOS_FISICOS.find(x => x.id === id);
+    return s + (e?.min || 0);
+  }, 0);
+  const durCog = selCog.reduce((s, id) => {
+    const e = EJERCICIOS_COGNITIVOS.find(x => x.id === id);
+    return s + (e?.min || 0);
+  }, 0);
+
+  // Categories
+  const catsFis = [...new Set(EJERCICIOS_FISICOS.map(e => e.cat))];
+  const catsCog = [...new Set(EJERCICIOS_COGNITIVOS.map(e => e.cat))];
+
+  const listaFis = filterCat
+    ? EJERCICIOS_FISICOS.filter(e => e.cat === filterCat)
+    : EJERCICIOS_FISICOS;
+  const listaCog = filterCat
+    ? EJERCICIOS_COGNITIVOS.filter(e => e.cat === filterCat)
+    : EJERCICIOS_COGNITIVOS;
+
+  // ── STEP: TALLER SELECTOR ──────────────────────────────────────────
+  if (step === 'taller') return React.createElement('div', { className: 'page' },
+    React.createElement('div', { className: 'tabs' },
+      [['hoy','📝 Registrar Sesión'],['historial','📚 Historial']].map(([v,l]) =>
+        React.createElement('div', { key: v, className: `tab ${tab===v?'active':''}`,
+          onClick: () => setTab(v) }, l)
+      )
+    ),
+
+    tab === 'hoy' && React.createElement('div', null,
+      React.createElement('div', { className: 'card' },
+        React.createElement('div', { className: 'card-title' }, 'Nueva sesión'),
+        React.createElement(Field, { label: 'Taller' },
+          React.createElement('select', { value: selTaller, onChange: e => setTaller(e.target.value) },
+            React.createElement('option', { value: '' }, '— Selecciona el taller —'),
+            TALLERES.map(t => React.createElement('option', { key: t, value: t }, t))
+          )
+        ),
+        React.createElement(Field, { label: 'Fecha' },
+          React.createElement('input', { type: 'date', value: selFecha,
+            onChange: e => setFecha(e.target.value) })
+        ),
+
+        // Last session preview
+        lastSession && selTaller && React.createElement('div', {
+          style: { background: '#F0FAF0', borderRadius: 10, padding: 12, marginBottom: 12 }
+        },
+          React.createElement('div', { style: { fontSize: 12, fontWeight: 800, color: '#375623', marginBottom: 6 } },
+            `📅 Sesión anterior: ${formatDate(lastSession.fecha)}`),
+          React.createElement('div', { style: { display: 'flex', gap: 8 } },
+            React.createElement('span', { style: { fontSize: 12, color: '#555' } },
+              `💪 ${lastSession.fisicos?.length || 0} físicos · 🧠 ${lastSession.cognitivos?.length || 0} cognitivos`),
+          ),
+          React.createElement('button', {
+            onClick: usarAnterior,
+            style: { marginTop: 8, background: '#375623', color: '#fff', border: 'none',
+                     borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 700,
+                     cursor: 'pointer', width: '100%' }
+          }, '🔄 Usar misma rutina anterior')
+        ),
+
+        React.createElement('div', { className: 'btn-row' },
+          React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 },
+            onClick: usarSugerida }, '⭐ Rutina sugerida'),
+          React.createElement('button', { className: 'btn btn-primary', style: { flex: 2 },
+            disabled: !selTaller || !selFecha,
+            onClick: () => setStep('seleccion') }, 'Seleccionar ejercicios →')
+        )
+      )
+    ),
+
+    tab === 'historial' && React.createElement('div', null,
+      React.createElement(Field, { label: 'Filtrar por taller' },
+        React.createElement('select', { value: selTaller, onChange: e => setTaller(e.target.value) },
+          React.createElement('option', { value: '' }, 'Todos los talleres'),
+          TALLERES.map(t => React.createElement('option', { key: t, value: t }, t))
+        )
+      ),
+      allSessions.length === 0
+        ? React.createElement('div', { className: 'empty-state' },
+            React.createElement('div', { className: 'emoji' }, '📚'),
+            React.createElement('p', null, 'No hay sesiones registradas aún'))
+        : allSessions.map((s, i) =>
+            React.createElement(SesionHistorialCard, {
+              key: i, sesion: s,
+              onPress: () => setDetail(s)
+            })
+          ),
+
+      // Detail modal
+      detailSesion && React.createElement('div', { className: 'overlay',
+        onClick: e => { if(e.target===e.currentTarget) setDetail(null); }
+      },
+        React.createElement('div', { className: 'sheet' },
+          React.createElement('div', { className: 'sheet-handle' }),
+          React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 2 } },
+            `Sesión — ${formatDate(detailSesion.fecha)}`),
+          React.createElement('div', { style: { fontSize: 13, color: '#777', marginBottom: 14 } },
+            detailSesion.taller),
+
+          detailSesion.fisicos?.length > 0 && React.createElement('div', null,
+            React.createElement(SectionHdr, null, `💪 Ejercicios Físicos (${detailSesion.fisicos.length})`),
+            detailSesion.fisicos.map(id => {
+              const e = EJERCICIOS_FISICOS.find(x => x.id === id);
+              return e ? React.createElement('div', { key: id,
+                style: { padding: '8px 0', borderBottom: '1px solid #f0f0f0', fontSize: 13 }
+              },
+                React.createElement('div', { style: { fontWeight: 700 } }, e.nombre),
+                React.createElement('div', { style: { fontSize: 12, color: '#888' } }, e.desc)
+              ) : null;
+            })
+          ),
+
+          detailSesion.cognitivos?.length > 0 && React.createElement('div', null,
+            React.createElement(SectionHdr, null, `🧠 Ejercicios Cognitivos (${detailSesion.cognitivos.length})`),
+            detailSesion.cognitivos.map(id => {
+              const e = EJERCICIOS_COGNITIVOS.find(x => x.id === id);
+              return e ? React.createElement('div', { key: id,
+                style: { padding: '8px 0', borderBottom: '1px solid #f0f0f0', fontSize: 13 }
+              },
+                React.createElement('div', { style: { fontWeight: 700 } }, e.nombre),
+                React.createElement('div', { style: { fontSize: 12, color: '#888' } }, e.desc)
+              ) : null;
+            })
+          ),
+
+          detailSesion.notas && React.createElement('div', null,
+            React.createElement(SectionHdr, null, '📝 Notas'),
+            React.createElement('div', { style: { fontSize: 13, color: '#555', lineHeight: 1.6 } },
+              detailSesion.notas)
+          ),
+
+          React.createElement('button', { className: 'btn btn-ghost', style: { marginTop: 14 },
+            onClick: () => setDetail(null) }, 'Cerrar')
+        )
+      )
+    )
+  );
+
+  // ── STEP: SELECCIÓN DE EJERCICIOS ──────────────────────────────────
+  return React.createElement('div', { className: 'page' },
+    // Header con resumen
+    React.createElement('div', { style: {
+      background: '#1F3864', borderRadius: 12, padding: '12px 14px', marginBottom: 12
+    } },
+      React.createElement('div', { style: { color: 'rgba(255,255,255,.7)', fontSize: 12, marginBottom: 2 } },
+        `${selTaller} · ${formatDate(selFecha)}`),
+      React.createElement('div', { style: { display: 'flex', gap: 12 } },
+        React.createElement('span', { style: { color: '#fff', fontSize: 14, fontWeight: 700 } },
+          `💪 ${selFis.length} físicos (${durFis} min)`),
+        React.createElement('span', { style: { color: '#fff', fontSize: 14, fontWeight: 700 } },
+          `🧠 ${selCog.length} cognitivos (${durCog} min)`),
+      ),
+      React.createElement('div', { style: { color: 'rgba(255,255,255,.6)', fontSize: 12, marginTop: 4 } },
+        `Duración total estimada: ~${durFis + durCog} minutos`)
+    ),
+
+    // Tipo tabs
+    React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 12 } },
+      React.createElement('button', {
+        className: `btn btn-sm ${tipo === 'fisico' ? 'btn-primary' : 'btn-ghost'}`,
+        style: { flex: 1 }, onClick: () => { setTipo('fisico'); setFilter(''); }
+      }, `💪 Físico (${selFis.length})`),
+      React.createElement('button', {
+        className: `btn btn-sm ${tipo === 'cognitivo' ? 'btn-purple' : 'btn-ghost'}`,
+        style: { flex: 1 }, onClick: () => { setTipo('cognitivo'); setFilter(''); }
+      }, `🧠 Cognitivo (${selCog.length})`)
+    ),
+
+    // Categorías filter
+    React.createElement('div', { style: { display: 'flex', gap: 6, overflowX: 'auto',
+      scrollbarWidth: 'none', marginBottom: 10, paddingBottom: 2 } },
+      React.createElement('div', {
+        onClick: () => setFilter(''),
+        style: { flexShrink: 0, padding: '6px 12px', borderRadius: 20, fontSize: 12,
+                 fontWeight: 700, cursor: 'pointer',
+                 background: !filterCat ? '#2E75B6' : '#fff',
+                 color: !filterCat ? '#fff' : '#777',
+                 border: '1.5px solid #E0E0E0' }
+      }, 'Todos'),
+      (tipo === 'fisico' ? catsFis : catsCog).map(cat =>
+        React.createElement('div', { key: cat,
+          onClick: () => setFilter(cat === filterCat ? '' : cat),
+          style: { flexShrink: 0, padding: '6px 12px', borderRadius: 20, fontSize: 12,
+                   fontWeight: 700, cursor: 'pointer',
+                   background: filterCat === cat ? '#2E75B6' : '#fff',
+                   color: filterCat === cat ? '#fff' : '#777',
+                   border: '1.5px solid #E0E0E0' }
+        }, cat)
+      )
+    ),
+
+    // Exercise list
+    (tipo === 'fisico' ? listaFis : listaCog).map(ej =>
+      React.createElement(EjercicioCard, {
+        key: ej.id, ej,
+        selected: tipo === 'fisico' ? selFis.includes(ej.id) : selCog.includes(ej.id),
+        onToggle: tipo === 'fisico' ? toggleFis : toggleCog
+      })
+    ),
+
+    // Notes
+    React.createElement(SectionHdr, null, '📝 Notas de sesión (opcional)'),
+    React.createElement('textarea', {
+      value: notas, onChange: e => setNotas(e.target.value),
+      placeholder: 'Observaciones generales del grupo, incidentes, logros destacados...',
+      style: { width: '100%', minHeight: 80, padding: 12, border: '1.5px solid #E0E0E0',
+               borderRadius: 12, fontSize: 14, resize: 'none', marginBottom: 14, outline: 'none' }
+    }),
+
+    // Actions
+    React.createElement('div', { className: 'btn-row' },
+      React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 },
+        onClick: () => setStep('taller') }, '← Volver'),
+      React.createElement('button', { className: 'btn btn-green', style: { flex: 2 },
+        onClick: guardar,
+        disabled: selFis.length === 0 && selCog.length === 0 },
+        '💾 Guardar Sesión')
+    )
+  );
+}
+
+
 // ─────────────────────────────────────────────────────────────────────
 // APP SHELL
 // ─────────────────────────────────────────────────────────────────────
@@ -1969,6 +2416,7 @@ function App(){
   const [patients,setPatients] = useState(()=>DB.get('patients',[]));
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
   const [sessionNotes,setSN]   = useState(()=>DB.get('sessionNotes',{}));
+  const [sessionLog,setSL]     = useState(()=>DB.get('sessionLog',{}));
   const [selPatient,setSel]    = useState(null);
   const [toastMsg,setToast]    = useState('');
 
@@ -1991,7 +2439,7 @@ function App(){
     p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO')
   ).length;
   const hasBack=['ficha','nuevo'].includes(view);
-  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',
+  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',rutinas:'Rutinas de Sesión',
     nuevo:'Nuevo Paciente',ficha:selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas',exportar:'Exportar Excel',config:'Configuración'};
 
@@ -2001,6 +2449,7 @@ function App(){
     {id:'pacientes',icon:'👥',label:'Pacientes'},
     {id:'alertas',icon:'🚨',label:'Alertas',dot:alertCount>0},
     {id:'rayen',icon:'🏥',label:'RAYEN'},
+    {id:'rutinas',icon:'📚',label:'Rutinas'},
     {id:'config',icon:'⚙️',label:'Config'},
   ];
 
@@ -2032,6 +2481,7 @@ function App(){
       :view==='alertas'  ?React.createElement(ViewAlertas,{patients,onPatient:openPatient})
       :view==='exportar' ?React.createElement(ViewExportar,{patients,attendanceLog,toast})
       :view==='rayen'    ?React.createElement(ViewRayen,{patients,attendanceLog,toast})
+      :view==='rutinas'  ?React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       :view==='config'   ?React.createElement(ViewConfig,{patients,setPatients,toast})
       :null,
 
