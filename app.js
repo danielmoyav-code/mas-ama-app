@@ -352,28 +352,51 @@ function PinScreen({onUnlock}){
 // ─────────────────────────────────────────────────────────────────────
 // MINI CHART COMPONENTS (SVG, no external libs)
 // ─────────────────────────────────────────────────────────────────────
-function BarChart({data, color='#2E75B6', height=120, showValues=true}){
+function BarChart({data, color='#2E75B6', height=120, showValues=true, horizontal=false}){
   if(!data||!data.length) return null;
   const max=Math.max(...data.map(d=>d.value),1);
-  const barW=Math.min(40, Math.floor(280/data.length)-6);
-  const totalW=data.length*(barW+6);
 
+  if(horizontal){
+    // Horizontal bar chart — avoids label overlap
+    const rowH=28; const labelW=110; const barAreaW=160; const valW=30;
+    const totalW=labelW+barAreaW+valW;
+    const totalH=data.length*rowH+8;
+    return React.createElement('svg',{
+      viewBox:`0 0 ${totalW} ${totalH}`,style:{width:'100%',display:'block'}
+    },
+      data.map((d,i)=>{
+        const bw=Math.max(4,Math.round((d.value/max)*(barAreaW-8)));
+        const y=i*rowH+4;
+        const lbl=d.label.length>16?d.label.slice(0,15)+'…':d.label;
+        return React.createElement('g',{key:i},
+          React.createElement('text',{x:labelW-6,y:y+rowH/2+4,textAnchor:'end',fontSize:10,fill:'#444'},lbl),
+          React.createElement('rect',{x:labelW,y:y+4,width:bw,height:rowH-10,rx:4,fill:d.color||color,opacity:.85}),
+          React.createElement('text',{x:labelW+bw+4,y:y+rowH/2+4,fontSize:10,fontWeight:700,fill:d.color||color},d.value)
+        );
+      })
+    );
+  }
+
+  // Vertical bar chart (for smaller datasets like age)
+  const barW=Math.min(36, Math.floor(260/data.length)-6);
+  const totalW=data.length*(barW+6)+6;
+  const labelH=32;
   return React.createElement('svg',{
-    viewBox:`0 0 ${Math.max(totalW,280)} ${height+40}`,
-    style:{width:'100%',overflow:'visible'}
+    viewBox:`0 0 ${Math.max(totalW,200)} ${height+labelH}`,
+    style:{width:'100%',overflow:'visible',display:'block'}
   },
     data.map((d,i)=>{
-      const bh=Math.max(4,Math.round((d.value/max)*(height-10)));
+      const bh=Math.max(4,Math.round((d.value/max)*(height-14)));
       const x=i*(barW+6)+3;
       const y=height-bh;
       return React.createElement('g',{key:i},
         React.createElement('rect',{x,y,width:barW,height:bh,rx:4,fill:d.color||color,opacity:.85}),
         showValues&&d.value>0&&React.createElement('text',{
-          x:x+barW/2,y:y-4,textAnchor:'middle',fontSize:10,fontWeight:700,fill:'#333'
+          x:x+barW/2,y:y-3,textAnchor:'middle',fontSize:10,fontWeight:700,fill:'#333'
         },d.value),
         React.createElement('text',{
-          x:x+barW/2,y:height+14,textAnchor:'middle',fontSize:9,fill:'#666',
-        },d.label.length>7?d.label.slice(0,7)+'…':d.label)
+          x:x+barW/2,y:height+13,textAnchor:'middle',fontSize:9,fill:'#555'
+        },d.label)
       );
     })
   );
@@ -565,9 +588,9 @@ function ViewInicio({patients,attendanceLog,onNav}){
     // Talleres bar chart
     React.createElement('div',{className:'card'},
       React.createElement('div',{className:'card-title'},'🏃 Pacientes por Taller'),
-      React.createElement(BarChart,{data:tallerBarData,height:100}),
-      React.createElement('div',{style:{fontSize:11,color:'#999',textAlign:'center',marginTop:4}},
-        'Azul = OK · Rojo = más del 50% bajo mínimo')
+      React.createElement(BarChart,{data:tallerBarData,horizontal:true}),
+      React.createElement('div',{style:{fontSize:11,color:'#999',marginTop:4}},
+        '🔵 Azul = OK  ·  🔴 Rojo = más del 50% bajo el mínimo')
     ),
 
     // Edad bar chart
