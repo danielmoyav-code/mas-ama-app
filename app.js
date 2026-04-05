@@ -1438,6 +1438,525 @@ function ViewConfig({patients,setPatients,toast}){
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MÓDULO RAYEN
+// ═══════════════════════════════════════════════════════════════════════
+
+// Textos oficiales extraídos del Excel de tus colegas
+const RAYEN_TEXTOS = {
+  diagnostico: 'Z71.9 Consulta, no especificada (Repetida y estado confirmado)',
+  formulario_taller: 'Programa más adulto mayor autovalente',
+
+  ingreso: {
+    actividad: 'Ingreso programa MAS AMA\nConsejerías individuales actividad física - alimentación saludable',
+    historia: 'Ingreso a programa Más Adultos Mayores Autovalentes.\nUsuario firma compromiso informado.',
+    indicaciones: `- Participar de los talleres de estimulación funcional
+- Ropa y calzado cómodo
+- Contar con hidratación durante la sesión
+- Contar con lentes ópticos y/o audífonos si corresponde
+- Traer su banda elástica personal si tiene
+- Asistir con cuaderno y lápiz
+- Realizar actividades que se entreguen para el domicilio`,
+    formulario: 'Programa más adulto mayor autovalente',
+  },
+
+  sesion: {
+    actividad: 'Ingreso programa MAS AMA',
+    descripcion: (taller, fecha) =>
+      `Se realiza sesión grupal del programa MAS AMA en taller ${taller}.\nFecha: ${fecha}.\nSe realizan ejercicios de estimulación funcional física y cognitiva.\nUsuario presenta asistencia activa y participación en las actividades.`,
+    indicaciones: `- Continuar realizando actividades físicas en el hogar
+- Practicar los ejercicios cognitivos trabajados en sesión
+- Mantener hidratación adecuada`,
+  },
+
+  grupal: {
+    actividad: 'GRP_Taller MAS AMA - Estimulación funcional física y cognitiva',
+    pasos: [
+      'Rayen Clínico → ATENCIÓN → Registro de atención grupal',
+      'Buscar agenda del taller correspondiente',
+      'En PARTICIPANTES: marcar ✓ (presente) o ✗ (ausente/no contesta)',
+      'En ACTIVIDAD ingresar el texto copiado',
+      'Finalizar con "COMPLEMENTAR"',
+    ],
+  },
+
+  manual: {
+    actividad: 'Llamada Telefónica_Programa MAS Adulto Mayor Autovalente',
+    historia: (mes) =>
+      `Se realiza seguimiento telefónico con el objetivo de evaluar y acompañar la realización de ejercicios físicos y actividades cognitivas en el hogar, basándose en el uso del Manual de Estimulación previamente entregado.\nMes de seguimiento: ${mes}.`,
+    preguntas: [
+      '¿Ha realizado los ejercicios físicos?',
+      '¿Ha realizado las actividades cognitivas?',
+    ],
+    indicaciones: `Se refuerzan indicaciones para la realización en el hogar de las actividades contenidas en el Manual de Estimulación.\nPróximo seguimiento: indicar mes.`,
+    formulario: 'Programa más adulto mayor autovalente: ESTADO: SEGUIMIENTO',
+  },
+
+  egreso: {
+    actividad: 'Egreso programa MAS AMA\nConsejerías individuales actividad física - alimentación saludable',
+    historia: 'Egreso de programa Más Adultos Mayores Autovalentes.',
+    formulario: 'Programa más adulto mayor autovalente: egreso completa ciclo',
+    indicaciones: `- Continuar haciendo ejercicio físico en el hogar
+- Continuar estimulando la mente con actividades cognitivas
+- Mantener una alimentación saludable
+- Mantener relaciones sociales creadas en el taller
+- Mantener controles de salud al día
+- Mantener contacto con equipo MAS AMA
+- Participar en el MAS AMA próximo año`,
+  },
+
+  abandono: {
+    actividad: 'Egreso programa MAS AMA',
+    historia: 'Se realiza egreso de programa por abandono.',
+    formulario: 'Programa más adulto mayor autovalente - egreso por abandono',
+    nota: '⚠️ Antes de registrar abandono: ¿Se le ofreció el Manual de Estimulación?',
+  },
+
+  cognitivo: {
+    moca: {
+      actividad: 'Evaluación Cognitiva - Programa Más Adultos Mayores Autovalentes',
+      historia: 'Evaluación cognitiva por queja subjetiva de memoria, alteración en pregunta N°9 de HAQ-8 y clínica observada.',
+      diagnostico: 'Z01.9 Examen de pesquisa especial, no especificado. (Repetida y estado confirmado)',
+    },
+  },
+};
+
+const TIPO_LABELS = {
+  sesion:    { icon:'🏃', label:'Sesión Taller', color:'#2E75B6' },
+  grupal:    { icon:'👥', label:'Atención Grupal', color:'#00B0F0' },
+  manual:    { icon:'📖', label:'Seguimiento Manual', color:'#7030A0' },
+  ingreso:   { icon:'✅', label:'Ingreso Programa', color:'#375623' },
+  egreso:    { icon:'🎓', label:'Egreso Programa', color:'#ED7D31' },
+  abandono:  { icon:'⚠️', label:'Abandono', color:'#C00000' },
+  cognitivo: { icon:'🧠', label:'Eval. Cognitiva', color:'#1F3864' },
+};
+
+// ── COPY TO CLIPBOARD ────────────────────────────────────────────────
+function copyText(text, toast) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => toast('✅ Copiado al portapapeles'));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('✅ Copiado');
+  }
+}
+
+// ── RAYEN FIELD CARD ─────────────────────────────────────────────────
+function RayenField({ label, value, toast, highlight }) {
+  if (!value) return null;
+  return React.createElement('div', {
+    style: {
+      background: highlight ? '#FFF9E6' : '#F8F9FA',
+      borderRadius: 10, padding: '10px 12px', marginBottom: 8,
+      border: highlight ? '1.5px solid #FFD966' : '1.5px solid #E0E0E0',
+    }
+  },
+    React.createElement('div', {
+      style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }
+    },
+      React.createElement('div', { style: { flex: 1 } },
+        React.createElement('div', {
+          style: { fontSize: 10, fontWeight: 800, color: '#888', textTransform: 'uppercase',
+                   letterSpacing: '.5px', marginBottom: 4 }
+        }, label),
+        React.createElement('div', {
+          style: { fontSize: 13, color: '#222', lineHeight: 1.5, whiteSpace: 'pre-wrap' }
+        }, value)
+      ),
+      React.createElement('button', {
+        onClick: () => copyText(value, toast),
+        style: {
+          background: '#2E75B6', color: '#fff', border: 'none', borderRadius: 8,
+          padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          flexShrink: 0, whiteSpace: 'nowrap'
+        }
+      }, '📋 Copiar')
+    )
+  );
+}
+
+// ── RAYEN FICHA POR PACIENTE ─────────────────────────────────────────
+function RayenFicha({ patient, tipo, taller, fecha, mes, toast, onClose }) {
+  const today = fecha || todayISO();
+  const fechaFmt = formatDate(today);
+
+  function buildFields() {
+    switch(tipo) {
+      case 'ingreso': return [
+        { label: 'ACTIVIDAD', value: RAYEN_TEXTOS.ingreso.actividad, highlight: true },
+        { label: 'DIAGNÓSTICO', value: RAYEN_TEXTOS.diagnostico },
+        { label: 'FORMULARIO', value: RAYEN_TEXTOS.ingreso.formulario },
+        { label: 'HISTORIA DE LA ENFERMEDAD', value: RAYEN_TEXTOS.ingreso.historia },
+        { label: 'HAQ-8', value: patient.haqPre ? `Resultado HAQ-8: ${patient.haqPre}` : 'Ingresar resultado HAQ-8' },
+        { label: 'TUG (seg)', value: patient.tugPre ? `TUG: ${patient.tugPre} segundos` : 'Ingresar TUG' },
+        { label: 'INDICACIONES', value: RAYEN_TEXTOS.ingreso.indicaciones },
+      ];
+      case 'sesion': return [
+        { label: 'ACTIVIDAD', value: RAYEN_TEXTOS.sesion.actividad, highlight: true },
+        { label: 'DIAGNÓSTICO', value: RAYEN_TEXTOS.diagnostico },
+        { label: 'FORMULARIO', value: RAYEN_TEXTOS.formulario_taller },
+        { label: 'HISTORIA DE LA ENFERMEDAD', value: RAYEN_TEXTOS.sesion.descripcion(taller || patient.taller, fechaFmt) },
+        { label: 'INDICACIONES', value: RAYEN_TEXTOS.sesion.indicaciones },
+      ];
+      case 'manual': return [
+        { label: 'ACTIVIDAD', value: RAYEN_TEXTOS.manual.actividad, highlight: true },
+        { label: 'DIAGNÓSTICO', value: RAYEN_TEXTOS.diagnostico },
+        { label: 'FORMULARIO', value: RAYEN_TEXTOS.manual.formulario },
+        { label: 'HISTORIA DE LA ENFERMEDAD', value: RAYEN_TEXTOS.manual.historia(mes || 'indicar mes') },
+        { label: 'PREGUNTAS A HACER', value: RAYEN_TEXTOS.manual.preguntas.join('\n') },
+        { label: 'INDICACIONES', value: RAYEN_TEXTOS.manual.indicaciones },
+      ];
+      case 'egreso': return [
+        { label: 'ACTIVIDAD', value: RAYEN_TEXTOS.egreso.actividad, highlight: true },
+        { label: 'DIAGNÓSTICO', value: RAYEN_TEXTOS.diagnostico },
+        { label: 'FORMULARIO', value: RAYEN_TEXTOS.egreso.formulario },
+        { label: 'HISTORIA DE LA ENFERMEDAD', value: RAYEN_TEXTOS.egreso.historia },
+        { label: 'TUG POST', value: patient.tugPost ? `TUG Post: ${patient.tugPost} seg → Resultado: ${patient.resTug||'—'}` : 'Ingresar TUG Post' },
+        { label: 'HAQ POST', value: patient.haqPost ? `HAQ-8 Post: ${patient.haqPost} → Resultado: ${patient.resEupDer||'—'}` : 'Ingresar HAQ Post' },
+        { label: 'INDICACIONES', value: RAYEN_TEXTOS.egreso.indicaciones },
+      ];
+      case 'abandono': return [
+        { label: '⚠️ ATENCIÓN', value: RAYEN_TEXTOS.abandono.nota, highlight: true },
+        { label: 'ACTIVIDAD', value: RAYEN_TEXTOS.abandono.actividad },
+        { label: 'DIAGNÓSTICO', value: RAYEN_TEXTOS.diagnostico },
+        { label: 'FORMULARIO', value: RAYEN_TEXTOS.abandono.formulario },
+        { label: 'HISTORIA DE LA ENFERMEDAD', value: RAYEN_TEXTOS.abandono.historia },
+      ];
+      case 'cognitivo': return [
+        { label: 'ACTIVIDAD', value: RAYEN_TEXTOS.cognitivo.moca.actividad, highlight: true },
+        { label: 'DIAGNÓSTICO (diferente)', value: RAYEN_TEXTOS.cognitivo.moca.diagnostico, highlight: true },
+        { label: 'HISTORIA DE LA ENFERMEDAD', value: RAYEN_TEXTOS.cognitivo.moca.historia },
+      ];
+      default: return [];
+    }
+  }
+
+  const fields = buildFields();
+  const t = TIPO_LABELS[tipo] || {};
+
+  // Copy all button
+  function copyAll() {
+    const allText = fields.map(f => `[${f.label}]\n${f.value}`).join('\n\n');
+    copyText(allText, toast);
+  }
+
+  return React.createElement('div', { className: 'overlay', onClick: e => { if(e.target===e.currentTarget) onClose(); } },
+    React.createElement('div', { className: 'sheet', style: { maxHeight: '90dvh' } },
+      React.createElement('div', { className: 'sheet-handle' }),
+
+      // Header
+      React.createElement('div', {
+        style: { background: t.color || '#2E75B6', borderRadius: 12, padding: '12px 16px', marginBottom: 14 }
+      },
+        React.createElement('div', { style: { fontSize: 12, color: 'rgba(255,255,255,.7)', fontWeight: 700, marginBottom: 2 } },
+          `${t.icon} ${t.label} — RAYEN`),
+        React.createElement('div', { style: { fontSize: 16, fontWeight: 900, color: '#fff' } }, patient.nombre),
+        React.createElement('div', { style: { fontSize: 12, color: 'rgba(255,255,255,.7)', marginTop: 2 } },
+          `RUT: ${patient.rut} · ${patient.taller}`)
+      ),
+
+      // Guide note
+      React.createElement('div', {
+        style: { background: '#E8F4FD', borderRadius: 10, padding: '10px 12px', marginBottom: 12,
+                 fontSize: 12, color: '#1F4E79', lineHeight: 1.5 }
+      },
+        React.createElement('strong', null, '📌 Pasos en RAYEN: '),
+        'Busca al paciente por RUT → Abre su ficha → Copia y pega cada campo abajo'
+      ),
+
+      // Fields
+      fields.map((f, i) => React.createElement(RayenField, { key: i, ...f, toast })),
+
+      // Copy all + close
+      React.createElement('div', { className: 'btn-row', style: { marginTop: 14 } },
+        React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 }, onClick: onClose }, 'Cerrar'),
+        React.createElement('button', { className: 'btn btn-primary', style: { flex: 2 }, onClick: copyAll },
+          '📋 Copiar Todo')
+      )
+    )
+  );
+}
+
+// ── RAYEN ATENCIÓN GRUPAL ─────────────────────────────────────────────
+function RayenGrupal({ patients, taller, fecha, attendanceLog, toast, onClose }) {
+  const fechaFmt = formatDate(fecha);
+  const presentes = patients.filter(p => {
+    const key = `${fecha}||${taller}||${p.rut||p.id}`;
+    return attendanceLog[key] === 'P';
+  });
+  const ausentes = patients.filter(p => {
+    const key = `${fecha}||${taller}||${p.rut||p.id}`;
+    return attendanceLog[key] === 'A';
+  });
+
+  const textoGrupal = `GRP_Taller MAS AMA - Estimulación funcional física y cognitiva
+Taller: ${taller}
+Fecha: ${fechaFmt}
+Total presentes: ${presentes.length}
+Total ausentes: ${ausentes.length}`;
+
+  const textoActividad = RAYEN_TEXTOS.sesion.descripcion(taller, fechaFmt);
+
+  return React.createElement('div', { className: 'overlay', onClick: e => { if(e.target===e.currentTarget) onClose(); } },
+    React.createElement('div', { className: 'sheet', style: { maxHeight: '90dvh' } },
+      React.createElement('div', { className: 'sheet-handle' }),
+      React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 4 } }, '👥 Atención Grupal RAYEN'),
+      React.createElement('div', { style: { fontSize: 13, color: '#777', marginBottom: 14 } }, `${taller} · ${fechaFmt}`),
+
+      // Steps
+      React.createElement('div', { className: 'card', style: { marginBottom: 12, padding: 12 } },
+        React.createElement('div', { className: 'card-title' }, '📌 Pasos en RAYEN'),
+        RAYEN_TEXTOS.grupal.pasos.map((p, i) =>
+          React.createElement('div', { key: i, style: { fontSize: 13, padding: '4px 0', borderBottom: '1px solid #f0f0f0',
+            display: 'flex', gap: 8 } },
+            React.createElement('span', { style: { color: '#2E75B6', fontWeight: 800, flexShrink: 0 } }, `${i+1}.`),
+            React.createElement('span', null, p)
+          )
+        )
+      ),
+
+      React.createElement(RayenField, { label: 'NOMBRE DE LA AGENDA / ACTIVIDAD', value: textoGrupal, toast, highlight: true }),
+      React.createElement(RayenField, { label: 'HISTORIA DE LA ENFERMEDAD (para cada participante)', value: textoActividad, toast }),
+
+      // Presentes list
+      presentes.length > 0 && React.createElement('div', { className: 'card', style: { marginBottom: 10, padding: 12 } },
+        React.createElement('div', { className: 'card-title' }, `✅ PRESENTES — ${presentes.length} pacientes`),
+        React.createElement('div', {
+          style: { fontSize: 12, color: '#375623', lineHeight: 1.8, fontFamily: 'monospace',
+                   background: '#F0FAF0', borderRadius: 8, padding: 8 }
+        }, presentes.map(p => `• ${p.nombre} (${p.rut})`).join('\n')),
+        React.createElement('button', {
+          onClick: () => copyText(presentes.map(p => `${p.nombre} — ${p.rut}`).join('\n'), toast),
+          style: { marginTop: 8, background: '#375623', color: '#fff', border: 'none', borderRadius: 8,
+                   padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', width: '100%' }
+        }, '📋 Copiar lista de presentes')
+      ),
+
+      // Ausentes
+      ausentes.length > 0 && React.createElement('div', { className: 'card', style: { marginBottom: 10, padding: 12 } },
+        React.createElement('div', { className: 'card-title' }, `❌ AUSENTES — ${ausentes.length} pacientes`),
+        React.createElement('div', { style: { fontSize: 12, color: '#C00000', lineHeight: 1.8, fontFamily: 'monospace',
+                                               background: '#FFF0F0', borderRadius: 8, padding: 8 } },
+          ausentes.map(p => `• ${p.nombre} (${p.rut})`).join('\n')
+        )
+      ),
+
+      React.createElement('button', { className: 'btn btn-ghost', style: { marginTop: 8 }, onClick: onClose }, 'Cerrar')
+    )
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  VIEW: RAYEN COMPLETO
+// ═══════════════════════════════════════════════════════════════════════
+function ViewRayen({ patients, attendanceLog, toast }) {
+  const [tab, setTab]             = useState('grupal');
+  const [selTaller, setTaller]    = useState('');
+  const [selFecha, setFecha]      = useState(todayISO());
+  const [selTipo, setTipo]        = useState('sesion');
+  const [selMes, setMes]          = useState(new Date().toISOString().slice(0, 7));
+  const [fichaPatient, setFicha]  = useState(null);
+  const [showGrupal, setGrupal]   = useState(false);
+  const [search, setSearch]       = useState('');
+
+  const talleres = [...new Set(patients.map(p => p.taller).filter(Boolean))].sort();
+
+  // Patients for individual tab
+  const filtered = useMemo(() => {
+    return patients.filter(p =>
+      (!search || p.nombre.toLowerCase().includes(search.toLowerCase()) || p.rut.includes(search)) &&
+      (!selTaller || p.taller === selTaller)
+    );
+  }, [patients, search, selTaller]);
+
+  // Count presentes for selected taller+fecha
+  const nPresentes = patients.filter(p => {
+    if (!selTaller || p.taller !== selTaller) return false;
+    return attendanceLog[`${selFecha}||${selTaller}||${p.rut||p.id}`] === 'P';
+  }).length;
+
+  return React.createElement('div', { className: 'page' },
+    // Header info
+    React.createElement('div', { className: 'card', style: { background: '#1F3864', marginBottom: 12 } },
+      React.createElement('div', { style: { fontSize: 13, fontWeight: 900, color: '#00B0F0', marginBottom: 4 } }, '🏥 MODO RAYEN'),
+      React.createElement('div', { style: { fontSize: 13, color: 'rgba(255,255,255,.8)', lineHeight: 1.5 } },
+        'Genera los textos listos para copiar y pegar en RAYEN. Abre RAYEN en paralelo y pega campo por campo.')
+    ),
+
+    // Tabs
+    React.createElement('div', { className: 'tabs' },
+      [['grupal', '👥 Atención Grupal'], ['individual', '👤 Por Paciente'], ['manual', '📖 Manual']].map(([v, l]) =>
+        React.createElement('div', { key: v, className: `tab ${tab === v ? 'active' : ''}`, onClick: () => setTab(v) }, l)
+      )
+    ),
+
+    // ── TAB: ATENCIÓN GRUPAL ────────────────────────────────────────────
+    tab === 'grupal' && React.createElement('div', null,
+      React.createElement('div', { className: 'card' },
+        React.createElement('div', { className: 'card-title' }, 'Selecciona el Taller y Fecha'),
+        React.createElement(Field, { label: 'Taller' },
+          React.createElement('select', { value: selTaller, onChange: e => setTaller(e.target.value) },
+            React.createElement('option', { value: '' }, '— Seleccionar taller —'),
+            talleres.map(t => React.createElement('option', { key: t, value: t }, t))
+          )
+        ),
+        React.createElement(Field, { label: 'Fecha de la sesión' },
+          React.createElement('input', { type: 'date', value: selFecha, onChange: e => setFecha(e.target.value) })
+        ),
+        selTaller && React.createElement('div', {
+          style: { background: nPresentes > 0 ? '#E2EFDA' : '#FFF0F0', borderRadius: 10,
+                   padding: '10px 14px', marginBottom: 12, fontSize: 14 }
+        },
+          nPresentes > 0
+            ? `✅ ${nPresentes} presentes registrados para esta sesión`
+            : '⚠️ No hay lista marcada para este taller/fecha. Ve a Lista primero.'
+        ),
+        React.createElement('button', {
+          className: 'btn btn-primary',
+          disabled: !selTaller || !selFecha,
+          onClick: () => setGrupal(true)
+        }, '👥 Generar Atención Grupal RAYEN')
+      ),
+
+      React.createElement('div', { className: 'card' },
+        React.createElement('div', { className: 'card-title' }, '📌 ¿Qué es Atención Grupal?'),
+        React.createElement('div', { style: { fontSize: 13, color: '#555', lineHeight: 1.6 } },
+          'Es la forma más eficiente: registras a todos los pacientes del taller en un solo ingreso en RAYEN. ' +
+          'Marcas ✓ a los presentes y ✗ a los ausentes. Mucho más rápido que uno por uno.')
+      )
+    ),
+
+    // ── TAB: POR PACIENTE ──────────────────────────────────────────────
+    tab === 'individual' && React.createElement('div', null,
+      React.createElement('div', { className: 'card', style: { marginBottom: 10 } },
+        React.createElement('div', { className: 'card-title' }, 'Tipo de Atención'),
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } },
+          Object.entries(TIPO_LABELS).filter(([k]) => k !== 'grupal').map(([k, v]) =>
+            React.createElement('div', {
+              key: k,
+              onClick: () => setTipo(k),
+              style: {
+                background: selTipo === k ? v.color : '#fff',
+                color: selTipo === k ? '#fff' : '#333',
+                border: `2px solid ${selTipo === k ? v.color : '#E0E0E0'}`,
+                borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
+                fontSize: 13, fontWeight: 700, textAlign: 'center', transition: 'all .15s'
+              }
+            }, `${v.icon} ${v.label}`)
+          )
+        )
+      ),
+
+      // Show abandono warning
+      selTipo === 'abandono' && React.createElement('div', {
+        style: { background: '#FFF2CC', border: '2px solid #FFD966', borderRadius: 12,
+                 padding: 14, marginBottom: 12 }
+      },
+        React.createElement('div', { style: { fontWeight: 800, fontSize: 14, marginBottom: 6 } },
+          '💡 Antes de registrar abandono:'),
+        React.createElement('div', { style: { fontSize: 13, color: '#555', lineHeight: 1.6 } },
+          '¿Le ofreciste el Manual de Estimulación al paciente? Si lo acepta, cambia su estado a MANUAL. ' +
+          'Así evitas el abandono y mantienes mejores indicadores.')
+      ),
+
+      React.createElement('div', { className: 'search-wrap', style: { marginBottom: 8 } },
+        React.createElement('span', { className: 'search-icon' }, '🔍'),
+        React.createElement('input', { type: 'text', placeholder: 'Buscar paciente...',
+          value: search, onChange: e => setSearch(e.target.value) })
+      ),
+
+      React.createElement('select', {
+        style: { width: '100%', padding: '10px 12px', border: '1.5px solid #E0E0E0',
+                 borderRadius: 12, fontSize: 13, background: '#fff', marginBottom: 10 },
+        value: selTaller, onChange: e => setTaller(e.target.value)
+      },
+        React.createElement('option', { value: '' }, 'Todos los talleres'),
+        talleres.map(t => React.createElement('option', { key: t, value: t }, t))
+      ),
+
+      React.createElement('div', { style: { fontSize: 12, color: '#888', marginBottom: 8 } },
+        `${filtered.length} pacientes · Toca uno para generar su ficha RAYEN`),
+
+      React.createElement('div', { className: 'patient-list' },
+        filtered.map(p => React.createElement('div', {
+          key: p.id, className: 'patient-row', onClick: () => setFicha(p)
+        },
+          React.createElement(Avatar, { sexo: p.sexo, nombre: p.nombre }),
+          React.createElement('div', { className: 'p-info' },
+            React.createElement('div', { className: 'p-name' }, p.nombre),
+            React.createElement('div', { className: 'p-sub' }, `RUT: ${p.rut} · ${p.taller}`),
+            React.createElement('div', { className: 'p-chips' },
+              React.createElement(EmpamChip, { estado: p.empamEstado }),
+              p.estado === 'MANUAL +' && React.createElement(Chip, { color: 'purple' }, '📖 Manual')
+            )
+          ),
+          React.createElement('span', { style: { fontSize: 20, color: '#ccc' } }, '›')
+        ))
+      )
+    ),
+
+    // ── TAB: MANUAL ────────────────────────────────────────────────────
+    tab === 'manual' && React.createElement('div', null,
+      React.createElement('div', { className: 'card', style: { background: '#EDE0F7', marginBottom: 12 } },
+        React.createElement('div', { style: { fontWeight: 800, fontSize: 15, color: '#7030A0', marginBottom: 6 } },
+          '📖 Pacientes con Manual de Estimulación'),
+        React.createElement('div', { style: { fontSize: 13, color: '#555', lineHeight: 1.6 } },
+          'Estos pacientes reciben seguimiento telefónico mensual en vez de asistir al taller. ' +
+          'Genera la ficha RAYEN para registrar el llamado.')
+      ),
+
+      React.createElement(Field, { label: 'Mes del seguimiento' },
+        React.createElement('input', { type: 'month', value: selMes, onChange: e => setMes(e.target.value) })
+      ),
+
+      React.createElement('div', { className: 'patient-list' },
+        patients.filter(p => p.estado === 'MANUAL +' || p.detalle?.includes('MANUAL')).map(p =>
+          React.createElement('div', {
+            key: p.id, className: 'patient-row', onClick: () => { setTipo('manual'); setFicha(p); }
+          },
+            React.createElement(Avatar, { sexo: p.sexo, nombre: p.nombre }),
+            React.createElement('div', { className: 'p-info' },
+              React.createElement('div', { className: 'p-name' }, p.nombre),
+              React.createElement('div', { className: 'p-sub' }, `RUT: ${p.rut} · ${p.fono || 'Sin teléfono'}`),
+              React.createElement('div', { className: 'p-chips' },
+                React.createElement(Chip, { color: 'purple' }, '📖 Manual'),
+                React.createElement(EmpamChip, { estado: p.empamEstado })
+              )
+            ),
+            React.createElement('span', { style: { fontSize: 20, color: '#ccc' } }, '›')
+          )
+        )
+      ),
+
+      patients.filter(p => p.estado === 'MANUAL +' || p.detalle?.includes('MANUAL')).length === 0 &&
+        React.createElement('div', { className: 'empty-state' },
+          React.createElement('div', { className: 'emoji' }, '📖'),
+          React.createElement('p', null, 'No hay pacientes con estado Manual')
+        )
+    ),
+
+    // ── MODALS ─────────────────────────────────────────────────────────
+    fichaPatient && React.createElement(RayenFicha, {
+      patient: fichaPatient, tipo: selTipo,
+      taller: selTaller || fichaPatient.taller,
+      fecha: selFecha, mes: selMes, toast,
+      onClose: () => setFicha(null)
+    }),
+
+    showGrupal && React.createElement(RayenGrupal, {
+      patients: patients.filter(p => p.taller === selTaller),
+      taller: selTaller, fecha: selFecha,
+      attendanceLog, toast,
+      onClose: () => setGrupal(false)
+    })
+  );
+}
+
+
 // ─────────────────────────────────────────────────────────────────────
 // APP SHELL
 // ─────────────────────────────────────────────────────────────────────
@@ -1472,7 +1991,7 @@ function App(){
     p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO')
   ).length;
   const hasBack=['ficha','nuevo'].includes(view);
-  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',
+  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',
     nuevo:'Nuevo Paciente',ficha:selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas',exportar:'Exportar Excel',config:'Configuración'};
 
@@ -1481,6 +2000,7 @@ function App(){
     {id:'lista',icon:'📋',label:'Lista'},
     {id:'pacientes',icon:'👥',label:'Pacientes'},
     {id:'alertas',icon:'🚨',label:'Alertas',dot:alertCount>0},
+    {id:'rayen',icon:'🏥',label:'RAYEN'},
     {id:'config',icon:'⚙️',label:'Config'},
   ];
 
@@ -1511,6 +2031,7 @@ function App(){
       :view==='ficha'    ?React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
       :view==='alertas'  ?React.createElement(ViewAlertas,{patients,onPatient:openPatient})
       :view==='exportar' ?React.createElement(ViewExportar,{patients,attendanceLog,toast})
+      :view==='rayen'    ?React.createElement(ViewRayen,{patients,attendanceLog,toast})
       :view==='config'   ?React.createElement(ViewConfig,{patients,setPatients,toast})
       :null,
 
