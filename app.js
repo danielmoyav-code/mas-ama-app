@@ -518,8 +518,6 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
   const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
 
   return React.createElement('div',{className:'page'},
-    // Sync bar
-    React.createElement(SyncIndicator,{syncing,lastSync,error:syncError}),
     // Welcome banner con figura
     React.createElement('div',{className:'welcome-banner'},
       React.createElement('div',{className:'welcome-figure'},'🏃'),
