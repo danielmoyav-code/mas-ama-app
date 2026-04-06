@@ -467,7 +467,8 @@ function ClinicalCompare({label, pre, post, unit='', lowerIsBetter=true}){
 
 
 
-function ViewInicio({patients,attendanceLog,onNav}){
+function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatus,lastSync,doSync}){
+  const esJefe = currentUser?.rol === ROLES.JEFE;
   const total    =patients.length;
   const vencidos =patients.filter(p=>p.empamEstado?.includes('VENCIDO')).length;
   const prontos  =patients.filter(p=>p.empamEstado?.includes('PRONTO')).length;
@@ -517,12 +518,19 @@ function ViewInicio({patients,attendanceLog,onNav}){
   const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
 
   return React.createElement('div',{className:'page'},
+    // Sync bar
+    React.createElement(SyncIndicator,{syncing,lastSync,error:syncError}),
     // Welcome banner con figura
     React.createElement('div',{className:'welcome-banner'},
       React.createElement('div',{className:'welcome-figure'},'🏃'),
       React.createElement('h2',null,`${saludo}, Daniel 👋`),
       React.createElement('p',null,`${total} pacientes activos · ${new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})}`)
     ),
+
+    // Sync indicator
+    autoSync?.url && React.createElement(SyncIndicator,{
+      status:syncStatus, lastSync, onSync:doSync
+    }),
 
     // KPIs
     React.createElement('div',{className:'kpi-grid'},
@@ -828,6 +836,7 @@ function ViewNuevo({patients,setPatients,toast,onBack}){
       :[...patients,newP];
     setPatients(updated); DB.set('patients',updated);
     toast(existing?'✅ Paciente actualizado':'✅ Paciente registrado correctamente');
+    if(autoSync?.url) setTimeout(()=>doSync(true), 1500);
     setSaving(false); onBack();
   }
 
@@ -1373,81 +1382,189 @@ function ViewExportar({patients,attendanceLog,toast}){
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: CONFIGURACIÓN
 // ─────────────────────────────────────────────────────────────────────
-function ViewConfig({patients,setPatients,toast}){
-  const [loading,setLoading]=useState(false);
-  const [pinActual,setPinActual]=useState('');
-  const [pinNuevo,setPinNuevo]=useState('');
-  const [pinConf,setPinConf]=useState('');
-  const fileRef=useRef();
+function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSession,onSync}){
+  const [tab,setTab]       = useState('general');
+  const [urlInput,setUrl]  = useState(syncConfig?.url||'');
+  const [testing,setTest]  = useState(false);
 
-  async function handleFile(e){
-    const file=e.target.files[0]; if(!file) return;
-    setLoading(true);
+  function saveUrl(){
+    const cfg = {...(syncConfig||{}), url:urlInput, enabled:!!urlInput};
+    setSyncConfig(cfg);
+    toast(urlInput ? '✅ URL guardada · Sync activado' : '⚠️ Sync desactivado');
+  }
+
+  async function testConnection(){
+    if(!urlInput){ toast('❌ Pega primero la URL del Apps Script'); return; }
+    setTest(true);
     try{
-      const parsed=await parseMaestroExcel(file);
-      setPatients(parsed); DB.set('patients',parsed);
-      toast(`✅ ${parsed.length} pacientes importados`);
-    }catch(err){ toast(`❌ ${err}`); }
-    setLoading(false); e.target.value='';
+      const r = await fetch(urlInput);
+      const j = await r.json();
+      if(j.ok) toast('✅ Conexión exitosa con Google Sheets');
+      else toast('⚠️ Respondió pero con error');
+    } catch(e){ toast('❌ No se pudo conectar · Verifica la URL'); }
+    setTest(false);
   }
 
-  function cambiarPin(){
-    const saved=DB.get('appPin',DEFAULT_PIN);
-    if(pinActual!==saved){ toast('❌ PIN actual incorrecto'); return; }
-    if(pinNuevo.length!==4||!/^\d{4}$/.test(pinNuevo)){ toast('❌ El nuevo PIN debe tener 4 dígitos'); return; }
-    if(pinNuevo!==pinConf){ toast('❌ Los PINs no coinciden'); return; }
-    DB.set('appPin',pinNuevo);
-    setPinActual(''); setPinNuevo(''); setPinConf('');
-    toast('✅ PIN cambiado correctamente');
+  // Exportar Excel
+  async function exportExcel(){
+    const XLSX = window.XLSX;
+    if(!XLSX){ toast('❌ Error: librería no cargada'); return; }
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(patients.map(p=>({
+      NOMBRE:p.nombre, RUT:p.rut, TALLER:p.taller, CICLO:p.ciclo,
+      ESTADO:p.estado, SEXO:p.sexo, EDAD:p.edad,
+      EMPAM_ESTADO:p.empamEstado, EMPAM_FECHA:p.empamFecha,
+      TUG_PRE:p.tugPre, HAQ_PRE:p.haqPre, FONO:p.fono,
+    })));
+    XLSX.utils.book_append_sheet(wb, ws1, 'MAESTRO');
+    const fecha = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `MAS_AMA_Respaldo_${fecha}.xlsx`);
+    toast('✅ Excel descargado — guárdalo en Drive');
   }
 
-  function clearAll(){
-    if(!confirm('¿Borrar todos los datos? No se puede deshacer.')) return;
-    DB.del('patients'); DB.del('attendanceLog');
-    setPatients([]); toast('🗑️ Datos eliminados');
+  // Reset data
+  function resetData(){
+    if(!window.confirm('¿Borrar TODOS los datos locales? Esto no afecta Google Sheets si está configurado.')) return;
+    DB.del('patients'); DB.del('attendanceLog'); DB.del('sessionLog');
+    DB.del('sessionNotes'); DB.del('agendaDuplas');
+    toast('🗑️ Datos locales borrados');
   }
 
   return React.createElement('div',{className:'page'},
-    // Import
-    React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'📂 Importar Maestro Excel'),
-      React.createElement('p',{style:{fontSize:13,color:'#777',marginBottom:14}},
-        'Importa el MAESTRO_MAS_AMA_PRO_2026.xlsx. Los datos quedan guardados en el celular para usarse sin internet.'),
-      loading
-        ?React.createElement('div',{className:'spinner'})
-        :React.createElement('div',{className:'import-zone',onClick:()=>fileRef.current?.click()},
-            React.createElement('div',{className:'import-icon'},'📊'),
-            React.createElement('p',null,'Toca para seleccionar el archivo Excel')),
-      React.createElement('input',{ref:fileRef,type:'file',accept:'.xlsx,.xls',
-        style:{display:'none'},onChange:handleFile}),
-      patients.length>0&&React.createElement('div',{style:{marginTop:12,padding:'10px 14px',
-        background:'#E2EFDA',borderRadius:10,fontSize:14,fontWeight:700,color:'#375623'}},
-        `✅ ${patients.length} pacientes · ${[...new Set(patients.map(p=>p.taller).filter(Boolean))].length} talleres cargados`)
+    React.createElement('div',{className:'tabs'},
+      [['general','⚙️ General'],['sync','☁️ Sync'],['datos','🗄️ Datos']]
+        .map(([v,l])=>React.createElement('div',{key:v,
+          className:`tab ${tab===v?'active':''}`,onClick:()=>setTab(v)},l))
     ),
 
-    // Cambiar PIN
-    React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'🔒 Cambiar PIN de Acceso'),
-      React.createElement('p',{style:{fontSize:13,color:'#777',marginBottom:12}},
-        'PIN actual por defecto: 1234. Comparte el PIN con tu equipo de trabajo.'),
-      React.createElement(Field,{label:'PIN actual (4 dígitos)'},
-        React.createElement('input',{type:'password',inputMode:'numeric',maxLength:4,
-          value:pinActual,onChange:e=>setPinActual(e.target.value),placeholder:'••••'})),
-      React.createElement(Field,{label:'Nuevo PIN (4 dígitos)'},
-        React.createElement('input',{type:'password',inputMode:'numeric',maxLength:4,
-          value:pinNuevo,onChange:e=>setPinNuevo(e.target.value),placeholder:'••••'})),
-      React.createElement(Field,{label:'Confirmar nuevo PIN'},
-        React.createElement('input',{type:'password',inputMode:'numeric',maxLength:4,
-          value:pinConf,onChange:e=>setPinConf(e.target.value),placeholder:'••••'})),
-      React.createElement('button',{className:'btn btn-primary btn-sm',onClick:cambiarPin},'🔒 Cambiar PIN')
+    // ── GENERAL ──────────────────────────────────────────────────────
+    tab==='general' && React.createElement('div',null,
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'Usuario activo'),
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:12}},
+          React.createElement('div',{style:{width:48,height:48,borderRadius:'50%',
+            background:'linear-gradient(135deg,#C0392B,#922B21)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            color:'#fff',fontWeight:900,fontSize:20}},
+            (userSession?.nombre||'D')[0]),
+          React.createElement('div',null,
+            React.createElement('div',{style:{fontWeight:800,fontSize:16}},
+              userSession?.nombre||'DANIEL'),
+            React.createElement('div',{style:{fontSize:13,color:'#777'}},
+              userSession?.email||'daniel.moyav@gmail.com'),
+            React.createElement('div',{style:{fontSize:12,marginTop:3}},
+              React.createElement('span',{style:{background:'#FADBD8',color:'#C0392B',
+                borderRadius:20,padding:'2px 8px',fontSize:11,fontWeight:700}},
+                '👑 Jefe — Acceso total'))
+          )
+        )
+      ),
+
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'Información del sistema'),
+        [
+          ['Versión','MAS AMA Pro v10'],
+          ['Pacientes registrados', patients.length],
+          ['Modo', syncConfig?.enabled ? '☁️ Google Sheets' : '📱 Local'],
+        ].map(([l,v])=>React.createElement('div',{key:l,style:{
+          display:'flex',justifyContent:'space-between',
+          padding:'8px 0',borderBottom:'1px solid #f0f0f0',fontSize:14
+        }},
+          React.createElement('span',{style:{color:'#777'}},l),
+          React.createElement('span',{style:{fontWeight:700}},v)
+        ))
+      ),
+
+      React.createElement('button',{
+        className:'btn btn-ghost',
+        onClick:()=>{
+          DB.del('userSession');
+          sessionStorage.removeItem('masama_unlocked');
+          window.location.reload();
+        }
+      },'🔒 Cerrar sesión')
     ),
 
-    // Peligro
-    patients.length>0&&React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'⚠️ Zona de peligro'),
-      React.createElement('p',{style:{fontSize:13,color:'#777',marginBottom:10}},
-        'Esto borra todos los datos del celular. Los datos del Excel original no se modifican.'),
-      React.createElement('button',{className:'btn btn-red',onClick:clearAll},'🗑️ Borrar todos los datos')
+    // ── SYNC ─────────────────────────────────────────────────────────
+    tab==='sync' && React.createElement('div',null,
+      // Estado actual
+      React.createElement('div',{className:'card',style:{
+        background: syncConfig?.enabled ? '#D5F5E3' : '#FEF9E7',
+        border:`1.5px solid ${syncConfig?.enabled ? '#1E8449' : '#F4D03F'}`
+      }},
+        React.createElement('div',{style:{fontWeight:800,fontSize:15,marginBottom:4}},
+          syncConfig?.enabled ? '✅ Sync activo' : '⚠️ Sync no configurado'),
+        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.5}},
+          syncConfig?.enabled
+            ? 'Los datos se sincronizan con Google Sheets automáticamente.'
+            : 'Configura la URL para compartir datos con tu equipo en tiempo real.')
+      ),
+
+      // Instrucciones
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'📋 Cómo configurar — 3 pasos'),
+        [
+          '1. Crea un Google Sheets nuevo en Drive',
+          '2. Ve a Extensiones → Apps Script → pega el código del script',
+          '3. Despliega como "Aplicación web" → copia la URL y pégala abajo',
+        ].map((s,i)=>React.createElement('div',{key:i,style:{
+          fontSize:13,padding:'8px 0',borderBottom:'1px solid #f0f0f0',
+          display:'flex',gap:10,color:'#444',lineHeight:1.5
+        }},s))
+      ),
+
+      // URL input
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'URL del Apps Script'),
+        React.createElement(Field,{label:'Pega aquí la URL de tu script'},
+          React.createElement('input',{
+            type:'url', value:urlInput,
+            onChange:e=>setUrl(e.target.value),
+            placeholder:'https://script.google.com/macros/s/...',
+          })
+        ),
+        React.createElement('div',{className:'btn-row'},
+          React.createElement('button',{
+            className:'btn btn-ghost btn-sm',style:{flex:1},
+            onClick:testConnection, disabled:testing
+          }, testing?'Probando...':'🔌 Probar'),
+          React.createElement('button',{
+            className:'btn btn-primary btn-sm',style:{flex:2},
+            onClick:saveUrl
+          },'💾 Guardar URL')
+        )
+      ),
+
+      // Sync manual
+      syncConfig?.enabled && React.createElement('div',{className:'btn-row'},
+        React.createElement('button',{className:'btn btn-ghost',
+          onClick:()=>onSync&&onSync('pull')
+        },'⬇️ Recibir datos del equipo'),
+        React.createElement('button',{className:'btn btn-primary',
+          onClick:()=>onSync&&onSync('push')
+        },'⬆️ Enviar mis datos')
+      )
+    ),
+
+    // ── DATOS ─────────────────────────────────────────────────────────
+    tab==='datos' && React.createElement('div',null,
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'💾 Respaldo'),
+        React.createElement('div',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
+          'Exporta un Excel con todos tus datos. Guárdalo en Google Drive semanalmente como respaldo.'),
+        React.createElement('button',{className:'btn btn-green',onClick:exportExcel},
+          '📥 Exportar Excel de respaldo')
+      ),
+
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title',style:{color:'#C0392B'}},'⚠️ Zona de peligro'),
+        React.createElement('div',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
+          'Borrar los datos locales no afecta Google Sheets si está configurado. ' +
+          'Podrás recuperarlos haciendo Pull.'),
+        React.createElement('button',{
+          className:'btn btn-red', onClick:resetData
+        },'🗑️ Borrar datos locales del celular')
+      )
     )
   );
 }
@@ -3015,11 +3132,624 @@ function ViewAgenda({ toast }) {
 }
 
 
-// ─────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SISTEMA DE SYNC — Google Sheets + Roles de Usuario
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── USUARIOS Y ROLES ─────────────────────────────────────────────────
+const USUARIOS_DEFAULT = [
+  {
+    nombre: 'DANIEL',
+    email: 'daniel.moyav@gmail.com',
+    rol: ROLES.JEFE,
+    color: '#C00000',
+    talleres: [], // jefe ve todos
+  },
+];
+
+const TALLERES_POR_USUARIO = {
+  'SILVANA': ['VM 2.0','VILLA EL SALITRE','CUMBRES ANDINAS','NUEVA VIDA','LA FUNDACIÓN','SAN SEBASTIAN','EXPERIENCIA Y JUVENTUD'],
+  'JORGE':   ['UV19 AM27','UV18','VILLA MACUL M-J'],
+  'ANITA':   ['UV19 PM','VILLA EL SALITRE','LA FUNDACIÓN'],
+  'GONZALO': ['UV19 PM'],
+};
+
+// ── SYNC ENGINE ───────────────────────────────────────────────────────
+const SYNC = {
+  // Guarda en local + encola para sync
+  save: (key, data, syncQueue, setSyncQueue) => {
+    DB.set(key, data);
+    const queue = [...(syncQueue || []), { key, ts: Date.now() }];
+    const unique = queue.filter((v,i,a) => a.findIndex(x=>x.key===v.key)===i);
+    setSyncQueue(unique);
+    DB.set('syncQueue', unique);
+  },
+
+  // Envía datos al Google Sheet
+  push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
+    if (!scriptUrl) throw new Error('URL no configurada');
+    const payload = {
+      action: 'fullSync',
+      user: userName,
+      timestamp: new Date().toISOString(),
+      patients: patients.map(p => ({
+        id:p.id, nombre:p.nombre, rut:p.rut, taller:p.taller,
+        ciclo:p.ciclo, estado:p.estado, sexo:p.sexo, edad:p.edad,
+        fono:p.fono, empamPre:p.empamPre, empamEstado:p.empamEstado,
+        empamFecha:p.empamFecha, tugPre:p.tugPre, haqPre:p.haqPre,
+        eupDerPre:p.eupDerPre, eupIzqPre:p.eupIzqPre,
+        tugPost:p.tugPost, haqPost:p.haqPost,
+        resTug:p.resTug, resEupDer:p.resEupDer, resEupIzq:p.resEupIzq,
+        estadoFunc:p.estadoFunc, alertaAsist:p.alertaAsist,
+        totalPresencias:p.totalPresencias, totalSesiones:p.totalSesiones,
+        hta:p.hta, dm:p.dm, ecv:p.ecv, isNew:p.isNew,
+        createdAt:p.createdAt,
+      })),
+      attendance: Object.entries(attendanceLog||{}).map(([k,v])=>{
+        const [date,taller,rut]=k.split('||');
+        return {key:k, date, taller, rut, value:v};
+      }),
+      sessionLog: Object.entries(sessionLog||{}).map(([k,v])=>({key:k,...v})),
+    };
+    await fetch(scriptUrl, {
+      method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),
+    });
+    return true;
+  },
+
+  // Baja datos del Google Sheet
+  pull: async (scriptUrl, userName) => {
+    if (!scriptUrl) throw new Error('URL no configurada');
+    try {
+      const url = `${scriptUrl}?action=pull&user=${encodeURIComponent(userName)}&t=${Date.now()}`;
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('Error de red');
+      return await res.json();
+    } catch(e) {
+      throw new Error('No se pudo conectar con Google Sheets');
+    }
+  },
+};
+
+// ── FILTRO POR ROL ────────────────────────────────────────────────────
+function filtrarPorRol(patients, currentUser) {
+  if (!currentUser || currentUser.rol === ROLES.JEFE) return patients;
+  const misTalleres = TALLERES_POR_USUARIO[currentUser.nombre] || currentUser.talleres || [];
+  if (misTalleres.length === 0) return patients;
+  return patients.filter(p => misTalleres.includes(p.taller));
+}
+
+// ── SYNC STATUS INDICATOR ─────────────────────────────────────────────
+function SyncIndicator({ status, lastSync, onSync }) {
+  const configs = {
+    idle:    { dot: 'ok',      text: lastSync ? `Sync: ${lastSync}` : 'Sin sincronizar', icon: '☁️' },
+    syncing: { dot: 'loading', text: 'Sincronizando...', icon: '🔄' },
+    ok:      { dot: 'ok',      text: `Sync: ${lastSync}`, icon: '✅' },
+    error:   { dot: 'err',     text: 'Sin conexión — datos guardados localmente', icon: '⚠️' },
+    offline: { dot: 'warn',    text: 'Offline — se sincronizará al conectarse', icon: '📴' },
+  };
+  const cfg = configs[status] || configs.idle;
+  return React.createElement('div', {
+    style: {
+      display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
+      background:'#fff', borderRadius:10, marginBottom:10,
+      boxShadow:'0 1px 6px rgba(0,0,0,.06)', cursor:'pointer',
+    },
+    onClick: onSync,
+  },
+    React.createElement('div', { className:`sync-dot ${cfg.dot}` }),
+    React.createElement('span', { style:{fontSize:12, color:'#555', flex:1} }, `${cfg.icon} ${cfg.text}`),
+    React.createElement('span', { style:{fontSize:11, color:'#2471A3', fontWeight:700} }, 'Sincronizar')
+  );
+}
+
+// ── GESTIÓN DE USUARIOS (para Config) ────────────────────────────────
+function UserManager({ usuarios, setUsuarios, currentUser, toast }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ nombre:'', email:'', rol:ROLES.KINE, talleres:[] });
+  const [selTalleres, setSelTalleres] = useState([]);
+
+  function addUser() {
+    if (!form.nombre.trim() || !form.email.trim()) {
+      toast('❌ Nombre y email son obligatorios'); return;
+    }
+    if (usuarios.find(u => u.email === form.email.trim())) {
+      toast('❌ Ese email ya existe'); return;
+    }
+    const newUser = {
+      nombre: form.nombre.trim().toUpperCase(),
+      email: form.email.trim().toLowerCase(),
+      rol: form.rol,
+      color: ['#2471A3','#375623','#7D3C98','#E67E22','#17A589'][usuarios.length % 5],
+      talleres: selTalleres,
+    };
+    const next = [...usuarios, newUser];
+    setUsuarios(next); DB.set('usuarios', next);
+    setShowAdd(false); setForm({nombre:'',email:'',rol:ROLES.KINE,talleres:[]});
+    setSelTalleres([]);
+    toast(`✅ ${newUser.nombre} agregado al equipo`);
+  }
+
+  function removeUser(email) {
+    if (email === 'daniel.moyav@gmail.com') { toast('❌ No puedes eliminar al administrador'); return; }
+    const next = usuarios.filter(u => u.email !== email);
+    setUsuarios(next); DB.set('usuarios', next);
+    toast('🗑️ Usuario eliminado');
+  }
+
+  function toggleTaller(t) {
+    setSelTalleres(prev => prev.includes(t) ? prev.filter(x=>x!==t) : [...prev,t]);
+  }
+
+  return React.createElement('div', null,
+    React.createElement('div', { className:'card-title' }, '👥 Equipo MAS AMA'),
+    React.createElement('p', { style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5} },
+      'Agrega a tus compañeros. Cuando configuren su Google Sheet y la misma URL de sync, compartirán todos los datos.'),
+
+    // Lista usuarios
+    usuarios.map(u => React.createElement('div', { key:u.email, style:{
+      display:'flex', alignItems:'center', gap:10,
+      padding:'10px 0', borderBottom:'1px solid #f0f0f0'
+    } },
+      React.createElement('div', { style:{
+        width:36, height:36, borderRadius:'50%', background:u.color,
+        display:'flex', alignItems:'center', justifyContent:'center',
+        color:'#fff', fontWeight:800, fontSize:14, flexShrink:0,
+      } }, u.nombre[0]),
+      React.createElement('div', { style:{flex:1, minWidth:0} },
+        React.createElement('div', { style:{fontWeight:700, fontSize:14} },
+          u.nombre, u.rol===ROLES.JEFE && React.createElement('span',{
+            style:{fontSize:11,background:'#D5F5E3',color:'#1E8449',
+                   borderRadius:10,padding:'2px 8px',marginLeft:6,fontWeight:700}
+          },'👑 Jefe')),
+        React.createElement('div', { style:{fontSize:12,color:'#888'} }, u.email),
+        u.talleres?.length > 0 && React.createElement('div',{
+          style:{fontSize:11,color:'#555',marginTop:2}
+        }, `Talleres: ${u.talleres.slice(0,2).join(', ')}${u.talleres.length>2?` +${u.talleres.length-2}`:''}`)
+      ),
+      u.email !== 'daniel.moyav@gmail.com' && React.createElement('button', {
+        onClick: () => removeUser(u.email),
+        style:{background:'#FFF0F0',color:'#C00000',border:'none',
+               borderRadius:8,padding:'6px 10px',cursor:'pointer',fontSize:12,fontWeight:700}
+      }, 'Quitar')
+    )),
+
+    // Botón agregar
+    !showAdd
+      ? React.createElement('button', {
+          className:'btn btn-primary btn-sm', style:{marginTop:14},
+          onClick:()=>setShowAdd(true)
+        }, '+ Agregar compañero')
+      : React.createElement('div', { style:{marginTop:14, background:'#F8F9FA', borderRadius:12, padding:14} },
+          React.createElement('div',{style:{fontWeight:800,fontSize:15,marginBottom:12}},'Nuevo integrante'),
+          React.createElement(Field,{label:'Nombre'},
+            React.createElement('input',{type:'text',placeholder:'Ej: SILVANA',
+              value:form.nombre, onChange:e=>setForm(f=>({...f,nombre:e.target.value}))})
+          ),
+          React.createElement(Field,{label:'Email Gmail'},
+            React.createElement('input',{type:'email',placeholder:'silvana@gmail.com',
+              value:form.email, onChange:e=>setForm(f=>({...f,email:e.target.value}))})
+          ),
+          React.createElement(Field,{label:'Rol'},
+            React.createElement('select',{value:form.rol,onChange:e=>setForm(f=>({...f,rol:e.target.value}))},
+              React.createElement('option',{value:ROLES.KINE},'Kinesiólogo/a'),
+              React.createElement('option',{value:ROLES.JEFE},'Jefe (ve todo)')
+            )
+          ),
+          form.rol === ROLES.KINE && React.createElement('div', null,
+            React.createElement('div',{className:'card-title',style:{marginBottom:8}},'Talleres asignados'),
+            React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}},
+              TALLERES.map(t => React.createElement('div',{
+                key:t, onClick:()=>toggleTaller(t),
+                style:{
+                  background: selTalleres.includes(t) ? '#D5F5E3' : '#fff',
+                  border:`2px solid ${selTalleres.includes(t)?'#1E8449':'#E0E0E0'}`,
+                  borderRadius:8, padding:'8px 10px', cursor:'pointer',
+                  fontSize:11, fontWeight:700, textAlign:'center',
+                  color: selTalleres.includes(t) ? '#1E8449' : '#555',
+                }
+              }, t))
+            )
+          ),
+          React.createElement('div',{className:'btn-row',style:{marginTop:12}},
+            React.createElement('button',{className:'btn btn-ghost',style:{flex:1},
+              onClick:()=>setShowAdd(false)},'Cancelar'),
+            React.createElement('button',{className:'btn btn-green',style:{flex:2},
+              onClick:addUser},'✅ Agregar')
+          )
+        )
+  );
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SISTEMA MULTI-USUARIO CON SYNC
+// ═══════════════════════════════════════════════════════════════════════
+
+
+
+// ── SYNC API ──────────────────────────────────────────────────────────
+async function apiCall(scriptUrl, action, payload, userSession) {
+  const body = JSON.stringify({
+    action,
+    email: userSession?.email,
+    pin:   userSession?.pin,
+    ...payload,
+  });
+  try {
+    const res = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    return await res.json();
+  } catch(e) {
+    throw new Error('Sin conexión');
+  }
+}
+
+async function doLogin(scriptUrl, email, pin) {
+  return apiCall(scriptUrl, 'login', {}, { email, pin });
+}
+
+async function doPull(scriptUrl, userSession) {
+  return apiCall(scriptUrl, 'sync_pull', {}, userSession);
+}
+
+async function doPush(scriptUrl, userSession, data) {
+  return apiCall(scriptUrl, 'sync_push', data, userSession);
+}
+
+async function doAddUser(scriptUrl, userSession, newUser) {
+  return apiCall(scriptUrl, 'add_user', { newUser }, userSession);
+}
+
+async function doGetUsers(scriptUrl, userSession) {
+  return apiCall(scriptUrl, 'get_users', {}, userSession);
+}
+
+async function doUpdateUser(scriptUrl, userSession, targetEmail, updates) {
+  return apiCall(scriptUrl, 'update_user', { targetEmail, updates }, userSession);
+}
+
+// ── LOGIN SCREEN MULTI-USUARIO ────────────────────────────────────────
+function LoginScreen({ onLogin, scriptUrl }) {
+  const [email, setEmail]     = useState('daniel.moyav@gmail.com');
+  const [pin, setPin]         = useState('');
+  const [error, setError]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode]       = useState('pin'); // pin | email
+
+  const savedPin = DB.get('appPin', DEFAULT_PIN);
+
+  // Si no hay script URL → usar PIN local
+  async function handleLogin() {
+    if (!scriptUrl) {
+      // Login local con PIN
+      if (pin === savedPin) {
+        onLogin({ email: 'daniel.moyav@gmail.com', nombre: 'DANIEL', rol: 'jefe',
+                  talleres: [], pin, isLocal: true });
+      } else {
+        setError('PIN incorrecto');
+        setTimeout(() => setError(''), 1500);
+      }
+      return;
+    }
+    // Login con Google Sheets
+    setLoading(true); setError('');
+    try {
+      const r = await doLogin(scriptUrl, email, pin);
+      if (r.ok) {
+        onLogin({ ...r.user, pin, isLocal: false });
+      } else {
+        setError(r.error || 'Error al iniciar sesión');
+      }
+    } catch(e) {
+      // Fallback a PIN local si no hay internet
+      if (pin === savedPin) {
+        onLogin({ email, nombre: 'DANIEL', rol: 'jefe', talleres: [], pin, isLocal: true });
+      } else {
+        setError('Sin conexión · PIN incorrecto');
+      }
+    }
+    setLoading(false);
+  }
+
+  const dots = [0,1,2,3].map(i => React.createElement('div', { key: i, style: {
+    width: 18, height: 18, borderRadius: '50%', margin: '0 10px',
+    background: pin.length > i ? '#58D68D' : 'rgba(255,255,255,.25)',
+    transition: 'background .15s',
+  }}));
+
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+
+  return React.createElement('div', { style: {
+    position: 'fixed', inset: 0,
+    background: 'linear-gradient(160deg,#1A3A5C 0%,#1F4E79 50%,#17A589 100%)',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    color: '#fff', fontFamily: "'Segoe UI',Arial,sans-serif", zIndex: 999,
+  } },
+    // Figura
+    React.createElement('div', { style: { fontSize: 64, marginBottom: 8 } }, '🏃'),
+    React.createElement('div', { style: { fontSize: 26, fontWeight: 900, marginBottom: 2 } },
+      'MAS ', React.createElement('span', { style: { color: '#58D68D' } }, 'AMA'), ' Pro'),
+    React.createElement('div', { style: { fontSize: 13, opacity: .65, marginBottom: 28 } },
+      'CESFAM Félix de Amesti · Macul'),
+
+    // Email (solo si hay scriptUrl)
+    scriptUrl && React.createElement('div', { style: { width: 280, marginBottom: 16 } },
+      React.createElement('input', {
+        type: 'email', value: email, onChange: e => setEmail(e.target.value),
+        placeholder: 'tu@gmail.com',
+        style: { width: '100%', padding: '12px 16px', borderRadius: 12,
+                 border: 'none', fontSize: 15, background: 'rgba(255,255,255,.15)',
+                 color: '#fff', outline: 'none', textAlign: 'center' }
+      })
+    ),
+
+    // PIN dots
+    React.createElement('div', { style: { display: 'flex', marginBottom: 8,
+      animation: error ? 'shake .4s ease' : 'none' } }, dots),
+    React.createElement('div', { style: { height: 20, fontSize: 13,
+      color: error ? '#FFD966' : 'transparent', marginBottom: 8 } }, error || '.'),
+
+    // Keypad
+    loading
+      ? React.createElement('div', { style: { width: 36, height: 36, border: '4px solid rgba(255,255,255,.3)',
+          borderTop: '4px solid #58D68D', borderRadius: '50%',
+          animation: 'spin .7s linear infinite', margin: '20px auto' } })
+      : React.createElement('div', { style: {
+          display: 'grid', gridTemplateColumns: 'repeat(3,80px)', gap: 14
+        } },
+          keys.map((k, i) => React.createElement('button', {
+            key: i,
+            onClick: () => {
+              if (!k) return;
+              if (k === '⌫') { setPin(p => p.slice(0,-1)); setError(''); return; }
+              const next = pin + k;
+              setPin(next);
+              setError('');
+              if (next.length === 4) { setTimeout(() => handleLogin(), 100); }
+            },
+            style: {
+              width: 80, height: 80, borderRadius: '50%', border: 'none',
+              background: k ? 'rgba(255,255,255,.12)' : 'transparent',
+              color: '#fff', fontSize: k === '⌫' ? 22 : 28, fontWeight: 700,
+              cursor: k ? 'pointer' : 'default',
+              visibility: k === '' ? 'hidden' : 'visible',
+            }
+          }, k))
+      ),
+
+    React.createElement('div', { style: { position: 'absolute', bottom: 28,
+      fontSize: 12, opacity: .4, textAlign: 'center' } },
+      scriptUrl ? 'Conectado con Google Sheets' : 'Modo local · PIN: 1234')
+  );
+}
+
+// ── VIEW: GESTIÓN DE USUARIOS (solo jefe) ────────────────────────────
+function ViewUsuarios({ userSession, syncConfig, toast }) {
+  const [users, setUsers]         = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [showAdd, setShowAdd]     = useState(false);
+  const [form, setForm]           = useState({
+    email: '', nombre: '', rol: 'kinesiologo',
+    talleres: [], pin: '1234',
+  });
+
+  useEffect(() => { loadUsers(); }, []);
+
+  async function loadUsers() {
+    if (!syncConfig.url) return;
+    setLoading(true);
+    try {
+      const r = await doGetUsers(syncConfig.url, userSession);
+      if (r.ok) setUsers(r.users);
+    } catch(e) {}
+    setLoading(false);
+  }
+
+  async function addUser() {
+    if (!form.email || !form.nombre) { toast('❌ Email y nombre son obligatorios'); return; }
+    setLoading(true);
+    try {
+      const r = await doAddUser(syncConfig.url, userSession, form);
+      if (r.ok) {
+        toast(`✅ ${form.nombre} agregado al equipo`);
+        setShowAdd(false);
+        setForm({ email:'', nombre:'', rol:'kinesiologo', talleres:[], pin:'1234' });
+        loadUsers();
+      } else { toast(`❌ ${r.error}`); }
+    } catch(e) { toast('❌ Sin conexión'); }
+    setLoading(false);
+  }
+
+  async function toggleActive(u) {
+    try {
+      await doUpdateUser(syncConfig.url, userSession, u.email, { activo: !u.activo });
+      toast(`✅ ${u.nombre} ${!u.activo ? 'activado' : 'desactivado'}`);
+      loadUsers();
+    } catch(e) { toast('❌ Error'); }
+  }
+
+  function toggleTaller(t) {
+    setForm(f => ({
+      ...f,
+      talleres: f.talleres.includes(t)
+        ? f.talleres.filter(x => x !== t)
+        : [...f.talleres, t]
+    }));
+  }
+
+  return React.createElement('div', { className: 'page' },
+    // Info banner
+    React.createElement('div', { style: { background: '#1A3A5C', borderRadius: 12,
+      padding: '12px 14px', marginBottom: 14 } },
+      React.createElement('div', { style: { color: '#58D68D', fontWeight: 900, fontSize: 14, marginBottom: 2 } },
+        '👥 EQUIPO MAS AMA'),
+      React.createElement('div', { style: { color: 'rgba(255,255,255,.8)', fontSize: 13 } },
+        !syncConfig.url
+          ? '⚠️ Configura la URL del Apps Script para gestionar usuarios'
+          : 'Agrega y gestiona los accesos de tu equipo')
+    ),
+
+    !syncConfig.url && React.createElement('div', { style: {
+      background: '#FEF9E7', border: '1.5px solid #F4D03F',
+      borderRadius: 12, padding: 14, marginBottom: 14, fontSize: 13, color: '#7E5109'
+    } },
+      '⚙️ Primero configura la URL del Google Apps Script en Configuración → Sync Google Sheets'
+    ),
+
+    // Lista de usuarios
+    loading
+      ? React.createElement('div', { className: 'spinner' })
+      : React.createElement('div', null,
+          users.map((u, i) => React.createElement('div', { key: i, className: 'card',
+            style: { padding: '12px 14px' } },
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+              React.createElement('div', { style: {
+                width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
+                background: u.rol === 'jefe'
+                  ? 'linear-gradient(135deg,#C0392B,#922B21)'
+                  : 'linear-gradient(135deg,#2471A3,#1A5276)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontWeight: 800, fontSize: 16,
+              } }, u.nombre?.[0] || '?'),
+              React.createElement('div', { flex: 1, style: { flex: 1 } },
+                React.createElement('div', { style: { fontWeight: 800, fontSize: 15 } }, u.nombre),
+                React.createElement('div', { style: { fontSize: 12, color: '#777' } }, u.email),
+                React.createElement('div', { style: { display: 'flex', gap: 6, marginTop: 4 } },
+                  React.createElement('span', { style: {
+                    background: u.rol === 'jefe' ? '#FADBD8' : '#D6EAF8',
+                    color: u.rol === 'jefe' ? '#C0392B' : '#2471A3',
+                    borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700
+                  } }, u.rol === 'jefe' ? '👑 Jefe' : '👤 Kinesiólogo'),
+                  !u.activo && React.createElement('span', { style: {
+                    background: '#EAECEE', color: '#777',
+                    borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700
+                  } }, 'Inactivo')
+                ),
+                u.talleres?.length > 0 && React.createElement('div', { style: {
+                  fontSize: 11, color: '#888', marginTop: 4
+                } }, `Talleres: ${u.talleres.slice(0,2).join(', ')}${u.talleres.length > 2 ? '...' : ''}`)
+              ),
+              u.email !== userSession.email && React.createElement('button', {
+                onClick: () => toggleActive(u),
+                style: {
+                  background: u.activo ? '#FADBD8' : '#D5F5E3',
+                  color: u.activo ? '#C0392B' : '#1E8449',
+                  border: 'none', borderRadius: 10, padding: '8px 12px',
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                }
+              }, u.activo ? 'Desactivar' : 'Activar')
+            )
+          ))
+        ),
+
+    // Botón agregar
+    syncConfig.url && React.createElement('button', {
+      className: 'btn btn-primary', style: { marginTop: 8 },
+      onClick: () => setShowAdd(true)
+    }, '➕ Agregar miembro del equipo'),
+
+    // Modal agregar usuario
+    showAdd && React.createElement('div', { className: 'overlay',
+      onClick: e => { if(e.target===e.currentTarget) setShowAdd(false); }
+    },
+      React.createElement('div', { className: 'sheet' },
+        React.createElement('div', { className: 'sheet-handle' }),
+        React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 14 } },
+          '➕ Agregar al Equipo'),
+
+        React.createElement(Field, { label: 'Correo Gmail *' },
+          React.createElement('input', { type: 'email', value: form.email,
+            onChange: e => setForm(f => ({...f, email: e.target.value})),
+            placeholder: 'silvana@gmail.com' })
+        ),
+        React.createElement(Field, { label: 'Nombre *' },
+          React.createElement('input', { type: 'text', value: form.nombre,
+            onChange: e => setForm(f => ({...f, nombre: e.target.value.toUpperCase()})),
+            placeholder: 'SILVANA' })
+        ),
+        React.createElement(Field, { label: 'Rol' },
+          React.createElement('select', { value: form.rol,
+            onChange: e => setForm(f => ({...f, rol: e.target.value})) },
+            React.createElement('option', { value: 'kinesiologo' }, '👤 Kinesiólogo'),
+            React.createElement('option', { value: 'jefe' }, '👑 Jefe (ve todo)')
+          )
+        ),
+        React.createElement(Field, { label: 'PIN de acceso' },
+          React.createElement('input', { type: 'text', inputMode: 'numeric',
+            maxLength: 4, value: form.pin,
+            onChange: e => setForm(f => ({...f, pin: e.target.value})),
+            placeholder: '1234' })
+        ),
+
+        form.rol !== 'jefe' && React.createElement('div', null,
+          React.createElement(SectionHdr, null, 'Talleres asignados'),
+          React.createElement('p', { style: { fontSize: 13, color: '#777', marginBottom: 10 } },
+            'Selecciona los talleres que verá este usuario:'),
+          React.createElement('div', { className: 'taller-grid' },
+            TALLERES.map(t => React.createElement('div', {
+              key: t,
+              className: `taller-btn ${form.talleres.includes(t) ? 'selected' : ''}`,
+              onClick: () => toggleTaller(t)
+            }, t))
+          )
+        ),
+
+        React.createElement('div', { className: 'btn-row', style: { marginTop: 14 } },
+          React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 },
+            onClick: () => setShowAdd(false) }, 'Cancelar'),
+          React.createElement('button', { className: 'btn btn-primary', style: { flex: 2 },
+            onClick: addUser, disabled: loading },
+            loading ? 'Guardando...' : '✅ Agregar')
+        )
+      )
+    )
+  );
+}
+
+// ── SYNC STATUS BAR ───────────────────────────────────────────────────
+function SyncStatusBar({ syncState, onSync }) {
+  if (!syncState) return null;
+  const colors = { syncing:'#2471A3', ok:'#1E8449', error:'#C0392B', offline:'#E67E22' };
+  const labels = {
+    syncing: '🔄 Sincronizando...',
+    ok:      `✅ Sincronizado · ${syncState.lastSync || ''}`,
+    error:   '❌ Error de sync · Toca para reintentar',
+    offline: '📵 Sin internet · Datos guardados localmente',
+  };
+  return React.createElement('div', {
+    onClick: syncState.status !== 'syncing' ? onSync : undefined,
+    style: {
+      background: colors[syncState.status] || '#888',
+      color: '#fff', padding: '8px 14px', fontSize: 12, fontWeight: 700,
+      display: 'flex', alignItems: 'center', gap: 8,
+      cursor: syncState.status !== 'syncing' ? 'pointer' : 'default',
+    }
+  },
+    React.createElement('div', { style: {
+      width: 8, height: 8, borderRadius: '50%', background: 'rgba(255,255,255,.6)',
+      animation: syncState.status === 'syncing' ? 'pulse .8s infinite' : 'none',
+    } }),
+    labels[syncState.status] || 'Sin estado'
+  );
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SISTEMA DE SYNC — Google Sheets + Roles de Usuario
+// ═══════════════════════════════════════════════════════════════════════
 // APP SHELL
 // ─────────────────────────────────────────────────────────────────────
 function App(){
-  // PIN: use sessionStorage so it always asks on fresh browser open
   const [unlocked,setUnlocked] = useState(()=>{
     try{ return sessionStorage.getItem('masama_unlocked')==='1'; }catch{ return false; }
   });
@@ -3028,16 +3758,89 @@ function App(){
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
   const [sessionNotes,setSN]   = useState(()=>DB.get('sessionNotes',{}));
   const [sessionLog,setSL]     = useState(()=>DB.get('sessionLog',{}));
+  const [usuarios,setUsuarios] = useState(()=>DB.get('usuarios', USUARIOS_DEFAULT));
+  const [currentUser,setCU]    = useState(()=>{
+    const saved = DB.get('currentUser', null);
+    return saved || USUARIOS_DEFAULT[0];
+  });
+  const [syncStatus,setSyncSt] = useState('idle');
+  const [lastSync,setLastSync] = useState(()=>DB.get('lastSync',''));
+  const [autoSync,setAutoSync] = useState(()=>DB.get('autoSync',{url:'',enabled:false}));
+  const [userSession,setSession] = useState(()=>DB.get('userSession',null));
+  const [syncConfig,setSyncCfg]  = useState(()=>DB.get('syncConfig',{url:'',enabled:false}));
+  const [syncState,setSyncState] = useState(null);
   const [selPatient,setSel]    = useState(null);
   const [toastMsg,setToast]    = useState('');
 
-  // Store unlock in sessionStorage (clears when browser/tab closes)
   useEffect(()=>{
     try{ if(unlocked) sessionStorage.setItem('masama_unlocked','1');
          else sessionStorage.removeItem('masama_unlocked'); }catch{}
   },[unlocked]);
 
+  // Sync pull on unlock
+  useEffect(()=>{
+    if(unlocked && userSession && syncConfig.url && syncConfig.enabled){
+      handleSync('pull');
+    }
+  },[unlocked]);
+
+  async function handleSync(direction='push'){
+    if(!syncConfig.url) return;
+    setSyncState({status:'syncing'});
+    try{
+      if(direction==='pull'){
+        const r = await doPull(syncConfig.url, userSession);
+        if(r.ok){
+          if(r.patients?.length>0) setPatients(r.patients);
+          // Merge attendance
+          if(r.attendance?.length>0){
+            const newLog={...attendanceLog};
+            r.attendance.forEach(a=>{
+              const k=`${a.date}||${a.taller}||${a.rut}`;
+              newLog[k]=a.asistencia;
+            });
+            setAL(newLog); DB.set('attendanceLog',newLog);
+          }
+          setSyncState({status:'ok',lastSync:new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})});
+        } else { setSyncState({status:'error'}); }
+      } else {
+        // Push
+        const attArr=Object.entries(attendanceLog).map(([k,v])=>{
+          const[date,taller,rut]=k.split('||');
+          return{date,taller,rut,asistencia:v};
+        });
+        const sesArr=Object.entries(sessionLog||{}).map(([,s])=>s);
+        const r=await doPush(syncConfig.url,userSession,{
+          patients,attendance:attArr,sessions:sesArr
+        });
+        if(r.ok) setSyncState({status:'ok',lastSync:new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})});
+        else setSyncState({status:'error'});
+      }
+    } catch(e){ setSyncState({status:'offline'}); }
+  }
+
   function toast(msg){ setToast(msg); setTimeout(()=>setToast(''),2600); }
+
+  async function doSync(silent=false) {
+    if (!autoSync.url) { if(!silent) toast('⚙️ Configura la URL de sync primero'); return; }
+    setSyncSt('syncing');
+    try {
+      await SYNC.push(patients, attendanceLog, sessionLog, {}, autoSync.url, currentUser.nombre);
+      const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+      setLastSync(now); DB.set('lastSync', now);
+      setSyncSt('ok');
+      if(!silent) toast('✅ Datos sincronizados con Google Sheets');
+      // Auto pull after push
+      setTimeout(() => setSyncSt('idle'), 3000);
+    } catch(e) {
+      setSyncSt('error');
+      if(!silent) toast('⚠️ Sin conexión — guardado localmente');
+      setTimeout(() => setSyncSt('idle'), 4000);
+    }
+  }
+
+  // Filter patients by role
+  const visiblePatients = filtrarPorRol(patients, currentUser);
   function openPatient(p){ setSel(p); setView('ficha'); }
   function goBack(){
     if(view==='ficha'){ setSel(null); setView('pacientes'); }
@@ -3046,11 +3849,11 @@ function App(){
   }
 
   const hasData=patients.length>0;
-  const alertCount=patients.filter(p=>
+  const alertCount=visiblePatients.filter(p=>
     p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO')
   ).length;
   const hasBack=['ficha','nuevo'].includes(view);
-  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',rutinas:'Rutinas de Sesión',rem:'Generador REM',agenda:'Agenda Duplas',
+  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',rutinas:'Rutinas de Sesión',rem:'Generador REM',agenda:'Agenda Duplas',usuarios:'Equipo MAS AMA',
     nuevo:'Nuevo Paciente',ficha:selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas',exportar:'Exportar Excel',config:'Configuración'};
 
@@ -3062,18 +3865,52 @@ function App(){
     {id:'rayen',icon:'🏥',label:'RAYEN'},
     {id:'rutinas',icon:'📚',label:'Rutinas'},
     {id:'agenda',icon:'📅',label:'Agenda'},
+    {id:'usuarios',icon:'👥',label:'Equipo'},
     {id:'config',icon:'⚙️',label:'Config'},
   ];
 
-  if(!unlocked) return React.createElement(PinScreen,{onUnlock:()=>setUnlocked(true)});
+  // Show login if no user selected
+  if(!currentUser) return React.createElement(LoginScreen,{
+    users: teamUsers,
+    onLogin: handleLogin,
+    onSetup: ()=>{},
+  });
+
+  // Show user panel if requested (admin only)
+  if(showUserPanel) return React.createElement('div',{id:'app'},
+    React.createElement('div',{className:'top-bar'},
+      React.createElement('button',{className:'back-btn',onClick:()=>setUserPanel(false)},'←'),
+      React.createElement('h1',null,'Gestión del Equipo')
+    ),
+    React.createElement(PanelUsuarios,{
+      users:teamUsers, setUsers:setTeamUsers, toast,
+      onClose:()=>setUserPanel(false), scriptUrl,
+    })
+  );
 
   return React.createElement('div',{id:'app'},
     React.createElement('div',{className:'top-bar'},
       hasBack&&React.createElement('button',{className:'back-btn',onClick:goBack},'←'),
       React.createElement('h1',null,titles[view]||'MAS AMA'),
+      !hasBack&&syncing&&React.createElement('div',{style:{width:18,height:18,borderRadius:'50%',
+        border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',
+        animation:'spin .7s linear infinite'}}),
+      !hasBack&&!syncing&&scriptUrl&&React.createElement('button',{
+        className:'top-icon-btn',onClick:()=>doSync(true),title:'Sincronizar'},'🔄'),
       !hasBack&&alertCount>0&&
         React.createElement('span',{className:'badge',onClick:()=>setView('alertas')},alertCount),
-      !hasBack&&React.createElement('button',{className:'top-icon-btn',onClick:()=>setView('exportar')},'📤')
+      !hasBack&&isAdmin&&React.createElement('button',{
+        className:'top-icon-btn',onClick:()=>setUserPanel(true),title:'Equipo'},'👥'),
+      !hasBack&&React.createElement('button',{
+        className:'top-icon-btn',
+        onClick:()=>{ if(confirm(`¿Cerrar sesión de ${currentUser?.nombre}?`)) handleLogout(); },
+        title:'Cerrar sesión'
+      },React.createElement('div',{style:{
+        width:28,height:28,borderRadius:'50%',
+        background:currentUser?.color||'#2471A3',
+        display:'flex',alignItems:'center',justifyContent:'center',
+        fontSize:13,fontWeight:800,color:'#fff'
+      }},currentUser?.nombre?.[0]||'?'))
     ),
 
     !hasData&&view!=='config'
@@ -3085,18 +3922,19 @@ function App(){
           React.createElement('button',{className:'btn btn-primary',
             style:{maxWidth:280,margin:'0 auto'},onClick:()=>setView('config')},
             '📂 Importar Maestro'))
-      :view==='inicio'   ?React.createElement(ViewInicio,{patients,attendanceLog,onNav:setView})
-      :view==='lista'    ?React.createElement(ViewLista,{patients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
-      :view==='pacientes'?React.createElement(ViewPacientes,{patients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
+      :view==='inicio'   ?React.createElement(ViewInicio,{patients:visiblePatients,attendanceLog,onNav:setView})
+      :view==='lista'    ?React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
+      :view==='pacientes'?React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
       :view==='nuevo'    ?React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:goBack})
       :view==='ficha'    ?React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
-      :view==='alertas'  ?React.createElement(ViewAlertas,{patients,onPatient:openPatient})
+      :view==='alertas'  ?React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
       :view==='exportar' ?React.createElement(ViewExportar,{patients,attendanceLog,toast})
-      :view==='rayen'    ?React.createElement(ViewRayen,{patients,attendanceLog,toast})
+      :view==='rayen'    ?React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
       :view==='rutinas'  ?React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
-      :view==='rem'      ?React.createElement(ViewREM,{patients,attendanceLog,toast})
+      :view==='rem'      ?React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       :view==='agenda'   ?React.createElement(ViewAgenda,{toast})
-      :view==='config'   ?React.createElement(ViewConfig,{patients,setPatients,toast})
+      :view==='usuarios' ?React.createElement(ViewUsuarios,{userSession,syncConfig,toast})
+      :view==='config'   ?React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig,setSyncConfig:c=>{setSyncCfg(c);DB.set('syncConfig',c);},userSession,onSync:handleSync})
       :null,
 
     React.createElement('nav',{className:'bottom-nav'},
