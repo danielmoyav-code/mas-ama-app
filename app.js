@@ -3136,6 +3136,7 @@ function ViewAgenda({ toast }) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── USUARIOS Y ROLES ─────────────────────────────────────────────────
+const ROLES = { JEFE:'jefe', KINE:'kine' };
 const USUARIOS_DEFAULT = [
   {
     nombre: 'DANIEL',
@@ -3825,7 +3826,7 @@ function App(){
   ];
 
   // PIN lock
-  if(!unlocked) return React.createElement(PINScreen,{onUnlock:()=>setUnlocked(true)});
+  if(!unlocked) return React.createElement(PinScreen,{onUnlock:()=>setUnlocked(true)});
 
   return React.createElement('div',{id:'app'},
     // Top bar
@@ -3872,7 +3873,7 @@ function App(){
       : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
-      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,autoSync,setAutoSync,usuarios,setUsuarios,currentUser})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:setAutoSync,userSession:currentUser,onSync:doSync})
       : null,
 
     // Nav
