@@ -789,7 +789,7 @@ const EMPTY_P={
   haqPre:'',dolorDPre:'',dolorIPre:'',catInt:'N',catExt:'P',observaciones:'',
 };
 
-function ViewNuevo({patients,setPatients,toast,onBack}){
+function ViewNuevo({patients,setPatients,toast,onBack,doSync,autoSync}){
   const [step,setStep]=useState(0);
   const [form,setForm]=useState({...EMPTY_P});
   const [errors,setErrors]=useState({});
@@ -3756,66 +3756,19 @@ function App(){
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
   const [sessionNotes,setSN]   = useState(()=>DB.get('sessionNotes',{}));
   const [sessionLog,setSL]     = useState(()=>DB.get('sessionLog',{}));
+  const [selPatient,setSel]    = useState(null);
+  const [toastMsg,setToast]    = useState('');
+  // Usuarios y sync
   const [usuarios,setUsuarios] = useState(()=>DB.get('usuarios', USUARIOS_DEFAULT));
-  const [currentUser,setCU]    = useState(()=>{
-    const saved = DB.get('currentUser', null);
-    return saved || USUARIOS_DEFAULT[0];
-  });
+  const [currentUser,setCU]    = useState(()=>DB.get('currentUser', USUARIOS_DEFAULT[0]));
   const [syncStatus,setSyncSt] = useState('idle');
   const [lastSync,setLastSync] = useState(()=>DB.get('lastSync',''));
   const [autoSync,setAutoSync] = useState(()=>DB.get('autoSync',{url:'',enabled:false}));
-  const [userSession,setSession] = useState(()=>DB.get('userSession',null));
-  const [syncConfig,setSyncCfg]  = useState(()=>DB.get('syncConfig',{url:'',enabled:false}));
-  const [syncState,setSyncState] = useState(null);
-  const [selPatient,setSel]    = useState(null);
-  const [toastMsg,setToast]    = useState('');
 
   useEffect(()=>{
     try{ if(unlocked) sessionStorage.setItem('masama_unlocked','1');
          else sessionStorage.removeItem('masama_unlocked'); }catch{}
   },[unlocked]);
-
-  // Sync pull on unlock
-  useEffect(()=>{
-    if(unlocked && userSession && syncConfig.url && syncConfig.enabled){
-      handleSync('pull');
-    }
-  },[unlocked]);
-
-  async function handleSync(direction='push'){
-    if(!syncConfig.url) return;
-    setSyncState({status:'syncing'});
-    try{
-      if(direction==='pull'){
-        const r = await doPull(syncConfig.url, userSession);
-        if(r.ok){
-          if(r.patients?.length>0) setPatients(r.patients);
-          // Merge attendance
-          if(r.attendance?.length>0){
-            const newLog={...attendanceLog};
-            r.attendance.forEach(a=>{
-              const k=`${a.date}||${a.taller}||${a.rut}`;
-              newLog[k]=a.asistencia;
-            });
-            setAL(newLog); DB.set('attendanceLog',newLog);
-          }
-          setSyncState({status:'ok',lastSync:new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})});
-        } else { setSyncState({status:'error'}); }
-      } else {
-        // Push
-        const attArr=Object.entries(attendanceLog).map(([k,v])=>{
-          const[date,taller,rut]=k.split('||');
-          return{date,taller,rut,asistencia:v};
-        });
-        const sesArr=Object.entries(sessionLog||{}).map(([,s])=>s);
-        const r=await doPush(syncConfig.url,userSession,{
-          patients,attendance:attArr,sessions:sesArr
-        });
-        if(r.ok) setSyncState({status:'ok',lastSync:new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})});
-        else setSyncState({status:'error'});
-      }
-    } catch(e){ setSyncState({status:'offline'}); }
-  }
 
   function toast(msg){ setToast(msg); setTimeout(()=>setToast(''),2600); }
 
@@ -3828,7 +3781,6 @@ function App(){
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
       if(!silent) toast('✅ Datos sincronizados con Google Sheets');
-      // Auto pull after push
       setTimeout(() => setSyncSt('idle'), 3000);
     } catch(e) {
       setSyncSt('error');
@@ -3837,8 +3789,10 @@ function App(){
     }
   }
 
-  // Filter patients by role
   const visiblePatients = filtrarPorRol(patients, currentUser);
+  const isJefe = currentUser?.rol === ROLES.JEFE;
+  const isSyncing = syncStatus === 'syncing';
+
   function openPatient(p){ setSel(p); setView('ficha'); }
   function goBack(){
     if(view==='ficha'){ setSel(null); setView('pacientes'); }
@@ -3846,73 +3800,60 @@ function App(){
     else setView('inicio');
   }
 
-  const hasData=patients.length>0;
-  const alertCount=visiblePatients.filter(p=>
+  const hasData = patients.length > 0;
+  const alertCount = visiblePatients.filter(p=>
     p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO')
   ).length;
-  const hasBack=['ficha','nuevo'].includes(view);
-  const titles={inicio:'MAS AMA 2026',lista:'Pasar Lista',pacientes:'Pacientes',rayen:'Modo RAYEN',rutinas:'Rutinas de Sesión',rem:'Generador REM',agenda:'Agenda Duplas',usuarios:'Equipo MAS AMA',
-    nuevo:'Nuevo Paciente',ficha:selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
-    alertas:'Alertas',exportar:'Exportar Excel',config:'Configuración'};
+  const hasBack = ['ficha','nuevo'].includes(view);
+  const titles = {
+    inicio:'MAS AMA 2026', lista:'Pasar Lista', pacientes:'Pacientes',
+    rayen:'Modo RAYEN', rutinas:'Rutinas de Sesión', rem:'Generador REM',
+    agenda:'Agenda Duplas', nuevo:'Nuevo Paciente',
+    ficha: selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
+    alertas:'Alertas', exportar:'Exportar Excel', config:'Configuración',
+  };
 
-  const navItems=[
-    {id:'inicio',icon:'🏠',label:'Inicio'},
-    {id:'lista',icon:'📋',label:'Lista'},
+  const navItems = [
+    {id:'inicio',  icon:'🏠', label:'Inicio'},
+    {id:'lista',   icon:'📋', label:'Lista'},
     {id:'pacientes',icon:'👥',label:'Pacientes'},
-    {id:'alertas',icon:'🚨',label:'Alertas',dot:alertCount>0},
-    {id:'rayen',icon:'🏥',label:'RAYEN'},
-    {id:'rutinas',icon:'📚',label:'Rutinas'},
-    {id:'agenda',icon:'📅',label:'Agenda'},
-    {id:'usuarios',icon:'👥',label:'Equipo'},
-    {id:'config',icon:'⚙️',label:'Config'},
+    {id:'alertas', icon:'🚨', label:'Alertas', dot:alertCount>0},
+    {id:'rayen',   icon:'🏥', label:'RAYEN'},
+    {id:'rutinas', icon:'📚', label:'Rutinas'},
+    {id:'agenda',  icon:'📅', label:'Agenda'},
+    {id:'config',  icon:'⚙️', label:'Config'},
   ];
 
-  // Show login if no user selected
-  if(!currentUser) return React.createElement(LoginScreen,{
-    users: teamUsers,
-    onLogin: handleLogin,
-    onSetup: ()=>{},
-  });
-
-  // Show user panel if requested (admin only)
-  if(showUserPanel) return React.createElement('div',{id:'app'},
-    React.createElement('div',{className:'top-bar'},
-      React.createElement('button',{className:'back-btn',onClick:()=>setUserPanel(false)},'←'),
-      React.createElement('h1',null,'Gestión del Equipo')
-    ),
-    React.createElement(PanelUsuarios,{
-      users:teamUsers, setUsers:setTeamUsers, toast,
-      onClose:()=>setUserPanel(false), scriptUrl,
-    })
-  );
+  // PIN lock
+  if(!unlocked) return React.createElement(PINScreen,{onUnlock:()=>setUnlocked(true)});
 
   return React.createElement('div',{id:'app'},
+    // Top bar
     React.createElement('div',{className:'top-bar'},
-      hasBack&&React.createElement('button',{className:'back-btn',onClick:goBack},'←'),
+      hasBack && React.createElement('button',{className:'back-btn',onClick:goBack},'←'),
       React.createElement('h1',null,titles[view]||'MAS AMA'),
-      !hasBack&&syncing&&React.createElement('div',{style:{width:18,height:18,borderRadius:'50%',
+      !hasBack && isSyncing && React.createElement('div',{style:{
+        width:18,height:18,borderRadius:'50%',
         border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',
-        animation:'spin .7s linear infinite'}}),
-      !hasBack&&!syncing&&scriptUrl&&React.createElement('button',{
-        className:'top-icon-btn',onClick:()=>doSync(true),title:'Sincronizar'},'🔄'),
-      !hasBack&&alertCount>0&&
-        React.createElement('span',{className:'badge',onClick:()=>setView('alertas')},alertCount),
-      !hasBack&&isAdmin&&React.createElement('button',{
-        className:'top-icon-btn',onClick:()=>setUserPanel(true),title:'Equipo'},'👥'),
-      !hasBack&&React.createElement('button',{
-        className:'top-icon-btn',
-        onClick:()=>{ if(confirm(`¿Cerrar sesión de ${currentUser?.nombre}?`)) handleLogout(); },
-        title:'Cerrar sesión'
-      },React.createElement('div',{style:{
+        animation:'spin .7s linear infinite'
+      }}),
+      !hasBack && !isSyncing && autoSync.url && React.createElement('button',{
+        className:'top-icon-btn', onClick:()=>doSync(true), title:'Sincronizar'
+      },'🔄'),
+      !hasBack && alertCount > 0 && React.createElement('span',{
+        className:'badge', onClick:()=>setView('alertas')
+      }, alertCount),
+      !hasBack && React.createElement('div',{style:{
         width:28,height:28,borderRadius:'50%',
-        background:currentUser?.color||'#2471A3',
+        background:currentUser?.color||'#C00000',
         display:'flex',alignItems:'center',justifyContent:'center',
-        fontSize:13,fontWeight:800,color:'#fff'
-      }},currentUser?.nombre?.[0]||'?'))
+        fontSize:13,fontWeight:800,color:'#fff',cursor:'default'
+      }},currentUser?.nombre?.[0]||'?')
     ),
 
-    !hasData&&view!=='config'
-      ?React.createElement('div',{className:'page',style:{textAlign:'center',paddingTop:50}},
+    // Contenido
+    !hasData && view!=='config'
+      ? React.createElement('div',{className:'page',style:{textAlign:'center',paddingTop:50}},
           React.createElement('div',{style:{fontSize:64,marginBottom:16}},'🏃'),
           React.createElement('h2',{style:{fontWeight:900,fontSize:22,marginBottom:8}},'MAS AMA'),
           React.createElement('p',{style:{color:'#777',fontSize:15,marginBottom:24,lineHeight:1.5}},
@@ -3920,32 +3861,34 @@ function App(){
           React.createElement('button',{className:'btn btn-primary',
             style:{maxWidth:280,margin:'0 auto'},onClick:()=>setView('config')},
             '📂 Importar Maestro'))
-      :view==='inicio'   ?React.createElement(ViewInicio,{patients:visiblePatients,attendanceLog,onNav:setView})
-      :view==='lista'    ?React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
-      :view==='pacientes'?React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
-      :view==='nuevo'    ?React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:goBack})
-      :view==='ficha'    ?React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
-      :view==='alertas'  ?React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
-      :view==='exportar' ?React.createElement(ViewExportar,{patients,attendanceLog,toast})
-      :view==='rayen'    ?React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
-      :view==='rutinas'  ?React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
-      :view==='rem'      ?React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
-      :view==='agenda'   ?React.createElement(ViewAgenda,{toast})
-      :view==='usuarios' ?React.createElement(ViewUsuarios,{userSession,syncConfig,toast})
-      :view==='config'   ?React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig,setSyncConfig:c=>{setSyncCfg(c);DB.set('syncConfig',c);},userSession,onSync:handleSync})
-      :null,
+      : view==='inicio'    ? React.createElement(ViewInicio,{patients:visiblePatients,attendanceLog,onNav:setView,currentUser,autoSync,syncStatus,lastSync,doSync})
+      : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
+      : view==='pacientes' ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
+      : view==='nuevo'     ? React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:goBack,doSync,autoSync})
+      : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
+      : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
+      : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
+      : view==='rayen'     ? React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
+      : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
+      : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
+      : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,autoSync,setAutoSync,usuarios,setUsuarios,currentUser})
+      : null,
 
+    // Nav
     React.createElement('nav',{className:'bottom-nav'},
       navItems.map(item=>React.createElement('button',{key:item.id,
         className:`nav-item ${view===item.id?'active':''}`,onClick:()=>setView(item.id)},
         React.createElement('span',{className:'icon'},item.icon),
         React.createElement('span',{className:'label'},item.label),
-        item.dot&&React.createElement('span',{className:'nav-dot'})
+        item.dot && React.createElement('span',{className:'nav-dot'})
       ))
     ),
-    toastMsg&&React.createElement(Toast,{msg:toastMsg,onDone:()=>setToast('')})
+
+    toastMsg && React.createElement(Toast,{msg:toastMsg,onDone:()=>setToast('')})
   );
 }
+
 
 const root=ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
