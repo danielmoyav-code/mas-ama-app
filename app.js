@@ -3193,7 +3193,7 @@ const SYNC = {
     }));
 
     // Enviar pacientes en grupos de 30
-    const CHUNK = 30;
+    const CHUNK = 5; // Grupos pequeños para evitar URLs largas
     const ts = new Date().toISOString();
     for (let i=0; i<patientData.length; i+=CHUNK) {
       const slice = patientData.slice(i, i+CHUNK);
@@ -3844,19 +3844,20 @@ function App(){
   function toast(msg){ setToast(msg); setTimeout(()=>setToast(''),2600); }
 
   async function doSync(silent=false) {
-    if (!autoSync.url) { if(!silent) toast('⚙️ Configura la URL de sync primero'); return; }
+    const url = autoSync?.url || DB.get('autoSync',{})?.url || '';
+    if (!url) { toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
     setSyncSt('syncing');
     try {
-      await SYNC.push(patients, attendanceLog, sessionLog, {}, autoSync.url, currentUser.nombre);
+      await SYNC.push(patients, attendanceLog, sessionLog, {}, url, currentUser?.nombre||'DANIEL');
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
-      if(!silent) toast('✅ Datos sincronizados con Google Sheets');
+      if(!silent) toast('✅ Datos enviados a Google Sheets');
       setTimeout(() => setSyncSt('idle'), 3000);
     } catch(e) {
       setSyncSt('error');
-      if(!silent) toast('⚠️ Sin conexión — guardado localmente');
-      setTimeout(() => setSyncSt('idle'), 4000);
+      if(!silent) toast('❌ Error: ' + (e.message||'Sin conexión'));
+      setTimeout(() => setSyncSt('idle'), 5000);
     }
   }
 
