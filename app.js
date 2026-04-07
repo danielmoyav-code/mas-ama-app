@@ -3166,7 +3166,7 @@ const SYNC = {
     DB.set('syncQueue', unique);
   },
 
-  // Envía datos al Google Sheet (usando GET para evitar CORS)
+  // Envía datos al Google Sheet (POST con text/plain para evitar CORS preflight)
   push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
     if (!scriptUrl) throw new Error('URL no configurada');
     const payload = {
@@ -3192,13 +3192,18 @@ const SYNC = {
       }),
       sessionLog: Object.entries(sessionLog||{}).map(([k,v])=>({key:k,...v})),
     };
-    // Usar GET con datos codificados para evitar bloqueo CORS
-    const encoded = encodeURIComponent(JSON.stringify(payload));
-    const url = `${scriptUrl}?action=sync&data=${encoded}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Error de red');
-    const json = await res.json();
-    if (json.status !== 'ok') throw new Error(json.message || 'Error en sync');
+    // Enviar como text/plain para evitar preflight CORS
+    const res = await fetch(scriptUrl, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text);
+      if (json.status !== 'ok') throw new Error(json.message || 'Error en sync');
+    } catch(e) {
+      if (!text.includes('ok')) throw new Error('Error en respuesta');
+    }
     return true;
   },
 
