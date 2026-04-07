@@ -473,7 +473,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
   const vencidos =patients.filter(p=>p.empamEstado?.includes('VENCIDO')).length;
   const prontos  =patients.filter(p=>p.empamEstado?.includes('PRONTO')).length;
   const bajo     =patients.filter(p=>p.alertaAsist?.includes('BAJO')).length;
-  const nuevos   =patients.filter(p=>p.isNew).length;
+  const nuevos   =patients.filter(p=>p.isNew||p.isNew==='SI').length;
   const hoyReg   =Object.keys(attendanceLog).filter(k=>k.startsWith(todayISO())).length;
   const vigente  =patients.filter(p=>p.empamEstado?.includes('VIGENTE')).length;
   const pendiente=patients.filter(p=>p.empamEstado?.includes('PEND')).length;
@@ -986,7 +986,7 @@ function ViewPacientes({patients,onPatient,onNuevo}){
       const me=!filterEmpam||p.empamEstado?.includes(filterEmpam);
       const msx=!filterSexo||p.sexo===filterSexo;
       if(tab==='alertas') return ms&&(p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')||p.alertaAsist?.includes('BAJO'));
-      if(tab==='nuevos') return ms&&p.isNew;
+      if(tab==='nuevos') return ms&&(p.isNew||p.isNew==='SI');
       return ms&&mt&&me&&msx;
     });
     return [...list].sort((a,b)=>{
