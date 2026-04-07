@@ -3136,6 +3136,8 @@ function ViewAgenda({ toast }) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── USUARIOS Y ROLES ─────────────────────────────────────────────────
+const ROLES = { JEFE: 'jefe', KINE: 'kine' };
+
 const USUARIOS_DEFAULT = [
   {
     nombre: 'DANIEL',
@@ -3223,6 +3225,59 @@ function filtrarPorRol(patients, currentUser) {
 }
 
 // ── SYNC STATUS INDICATOR ─────────────────────────────────────────────
+// ── PIN SCREEN ────────────────────────────────────────────────────────
+function PINScreen({ onUnlock }) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState(false);
+  const VALID_PIN = '1234';
+
+  function check(p) {
+    if (p.length < 4) return;
+    if (p === VALID_PIN) {
+      onUnlock();
+    } else {
+      setError(true);
+      setTimeout(() => { setPin(''); setError(false); }, 800);
+    }
+  }
+
+  function pressKey(k) {
+    if (k === '←') { setPin(p => p.slice(0,-1)); return; }
+    const next = pin + k;
+    setPin(next);
+    if (next.length === 4) check(next);
+  }
+
+  return React.createElement('div', {
+    style: { display:'flex', flexDirection:'column', alignItems:'center',
+             justifyContent:'center', minHeight:'100vh', background:'#1A3A5C', padding:24 }
+  },
+    React.createElement('div', { style:{fontSize:64, marginBottom:8} }, '🏃'),
+    React.createElement('h2', { style:{color:'#fff', fontWeight:900, fontSize:26, marginBottom:4} }, 'MAS AMA Pro'),
+    React.createElement('p', { style:{color:'rgba(255,255,255,.7)', marginBottom:32, fontSize:14} }, 'Ingresa tu PIN'),
+    React.createElement('div', { style:{display:'flex', gap:12, marginBottom:24} },
+      [0,1,2,3].map(i => React.createElement('div', { key:i, style:{
+        width:16, height:16, borderRadius:'50%',
+        background: pin.length > i ? '#fff' : 'rgba(255,255,255,.3)',
+        transition:'background .15s'
+      }}))
+    ),
+    error && React.createElement('p', { style:{color:'#FF6B6B', marginBottom:12, fontSize:13} }, 'PIN incorrecto'),
+    React.createElement('div', { style:{display:'grid', gridTemplateColumns:'repeat(3,72px)', gap:10} },
+      ['1','2','3','4','5','6','7','8','9','←','0','✓'].map(k =>
+        React.createElement('button', {
+          key:k, onClick:()=>pressKey(k),
+          style:{
+            height:72, borderRadius:16, border:'none', cursor:'pointer', fontSize:22, fontWeight:700,
+            background: k==='✓' ? '#27AE60' : k==='←' ? 'rgba(255,255,255,.15)' : 'rgba(255,255,255,.1)',
+            color:'#fff', transition:'background .1s'
+          }
+        }, k)
+      )
+    )
+  );
+}
+
 function SyncIndicator({ status, lastSync, onSync }) {
   const configs = {
     idle:    { dot: 'ok',      text: lastSync ? `Sync: ${lastSync}` : 'Sin sincronizar', icon: '☁️' },
