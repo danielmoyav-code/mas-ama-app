@@ -1534,13 +1534,17 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
       ),
 
       // Sync manual
-      syncConfig?.enabled && React.createElement('div',{className:'btn-row'},
-        React.createElement('button',{className:'btn btn-ghost',
-          onClick:()=>onSync&&onSync('pull')
-        },'⬇️ Recibir datos del equipo'),
-        React.createElement('button',{className:'btn btn-primary',
-          onClick:()=>onSync&&onSync('push')
-        },'⬆️ Enviar mis datos')
+      syncConfig?.enabled && React.createElement('div',null,
+        React.createElement('p',{style:{fontSize:12,color:'#888',marginBottom:8,lineHeight:1.5}},
+          '💡 Sync diario: envía solo lo nuevo de hoy (rápido). Sync completo: envía todo.'),
+        React.createElement('div',{className:'btn-row'},
+          React.createElement('button',{className:'btn btn-primary',style:{flex:2},
+            onClick:()=>onSync&&onSync('push')
+          },'⬆️ Sync diario'),
+          React.createElement('button',{className:'btn btn-ghost',style:{flex:2,fontSize:12},
+            onClick:()=>{ if(confirm('Envía los '+patients.length+' pacientes completos. Puede tardar 1-2 min. ¿Continuar?')) onSync&&onSync('pushAll'); }
+          },'📦 Sync completo')
+        )
       )
     ),
 
@@ -3166,57 +3170,56 @@ const SYNC = {
     DB.set('syncQueue', unique);
   },
 
-  // Envía datos usando no-cors (funciona siempre con Google Apps Script)
+  // Sync inteligente — solo envía lo que cambió
   push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
     if (!scriptUrl) throw new Error('URL no configurada');
 
-    const patientData = patients.map(p => ({
-      id:p.id, nombre:p.nombre, rut:p.rut, taller:p.taller,
-      ciclo:p.ciclo, estado:p.estado, sexo:p.sexo, edad:p.edad,
-      fono:p.fono, empamPre:p.empamPre, empamEstado:p.empamEstado,
-      empamFecha:p.empamFecha, tugPre:p.tugPre, haqPre:p.haqPre,
-      eupDerPre:p.eupDerPre, eupIzqPre:p.eupIzqPre,
-      tugPost:p.tugPost, haqPost:p.haqPost,
-      resTug:p.resTug, resEupDer:p.resEupDer, resEupIzq:p.resEupIzq,
-      estadoFunc:p.estadoFunc, alertaAsist:p.alertaAsist,
-      totalPresencias:p.totalPresencias, totalSesiones:p.totalSesiones,
-      hta:p.hta, dm:p.dm, ecv:p.ecv, isNew:p.isNew, createdAt:p.createdAt,
-    }));
-
-    const attArr = Object.entries(attendanceLog||{}).map(([k,v])=>{
-      const [date,taller,rut]=k.split('||');
-      return {key:k,date,taller,rut,value:v};
-    });
-
-    // Enviar en grupos de 5 con no-cors (Google Apps Script lo acepta)
-    const CHUNK = 5;
-    const ts = new Date().toISOString();
-
-    const sendChunk = (data) => fetch(scriptUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: {'Content-Type':'text/plain'},
+    const send = (data) => fetch(scriptUrl, {
+      method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'text/plain'},
       body: JSON.stringify(data),
     });
 
-    // Pacientes en grupos de 5
-    for (let i=0; i<patientData.length; i+=CHUNK) {
-      await sendChunk({ action:'syncPatients', user:userName, timestamp:ts,
-        patients: patientData.slice(i, i+CHUNK) });
+    const ts = new Date().toISOString();
+    const today = ts.slice(0,10);
+
+    // 1. Solo pacientes nuevos (isNew=true) — normalmente 0-5
+    const nuevos = patients.filter(p => p.isNew === true || p.isNew === 'SI');
+    if (nuevos.length > 0) {
+      await send({ action:'syncPatients', user:userName, timestamp:ts, patients:nuevos });
     }
 
-    // Asistencia
-    if (attArr.length > 0) {
-      for (let i=0; i<attArr.length; i+=50) {
-        await sendChunk({ action:'syncAttendance', user:userName, timestamp:ts,
-          attendance: attArr.slice(i, i+50) });
-      }
+    // 2. Solo asistencia de HOY
+    const attHoy = Object.entries(attendanceLog||{})
+      .filter(([k]) => k.startsWith(today))
+      .map(([k,v]) => {
+        const [date,taller,rut] = k.split('||');
+        return {key:k, date, taller, rut, value:v};
+      });
+    if (attHoy.length > 0) {
+      await send({ action:'syncAttendance', user:userName, timestamp:ts, attendance:attHoy });
     }
 
-    // Log
-    await sendChunk({ action:'logSync', user:userName, timestamp:ts,
-      nPat:patientData.length, nAtt:attArr.length });
+    // 3. Log
+    await send({ action:'logSync', user:userName, timestamp:ts, nPat:nuevos.length, nAtt:attHoy.length });
 
+    return { nuevos: nuevos.length, asistencia: attHoy.length };
+  },
+
+  // Sync completo — solo cuando el usuario lo pide explícitamente
+  pushAll: async (patients, attendanceLog, scriptUrl, userName) => {
+    if (!scriptUrl) throw new Error('URL no configurada');
+    const send = (data) => fetch(scriptUrl, {
+      method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify(data),
+    });
+    const ts = new Date().toISOString();
+    const CHUNK = 30;
+    for (let i=0; i<patients.length; i+=CHUNK) {
+      await send({ action:'syncPatients', user:userName, timestamp:ts, patients:patients.slice(i,i+CHUNK) });
+    }
+    await send({ action:'logSync', user:userName, timestamp:ts, nPat:patients.length, nAtt:0 });
     return true;
   },
 
@@ -3847,16 +3850,31 @@ function App(){
 
   function toast(msg){ setToast(msg); setTimeout(()=>setToast(''),2600); }
 
-  async function doSync(silent=false) {
+  async function doSync(silent=false, full=false) {
     const url = autoSync?.url || DB.get('autoSync',{})?.url || '';
     if (!url) { toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
     setSyncSt('syncing');
     try {
-      await SYNC.push(patients, attendanceLog, sessionLog, {}, url, currentUser?.nombre||'DANIEL');
+      let result;
+      if (full) {
+        await SYNC.pushAll(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
+        result = { nuevos: patients.length, asistencia: 0 };
+      } else {
+        result = await SYNC.push(patients, attendanceLog, sessionLog, {}, url, currentUser?.nombre||'DANIEL');
+      }
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
-      if(!silent) toast('✅ Datos enviados — revisa el Google Sheet');
+      if (!silent) {
+        if (full) toast('✅ Sync completo — todos los pacientes enviados');
+        else {
+          const r = result || {};
+          const msg = r.nuevos > 0 || r.asistencia > 0
+            ? `✅ Enviado: ${r.nuevos} nuevos · ${r.asistencia} asistencias hoy`
+            : '✅ Sin cambios nuevos que enviar';
+          toast(msg);
+        }
+      }
       setTimeout(() => setSyncSt('idle'), 3000);
     } catch(e) {
       setSyncSt('error');
@@ -3948,7 +3966,7 @@ function App(){
       : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
-      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{setAutoSync(cfg);DB.set('autoSync',cfg);},usuarios,setUsuarios,currentUser})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{setAutoSync(cfg);DB.set('autoSync',cfg);},usuarios,setUsuarios,currentUser,onSync:(type)=>doSync(false,type==='pushAll')})
       : null,
 
     // Nav
