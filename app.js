@@ -3855,25 +3855,44 @@ function App(){
     if (!url) { toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
     setSyncSt('syncing');
     try {
-      let result;
+      // 1. ENVIAR cambios locales
       if (full) {
         await SYNC.pushAll(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
-        result = { nuevos: patients.length, asistencia: 0 };
       } else {
-        result = await SYNC.push(patients, attendanceLog, sessionLog, {}, url, currentUser?.nombre||'DANIEL');
+        await SYNC.push(patients, attendanceLog, sessionLog, {}, url, currentUser?.nombre||'DANIEL');
       }
+
+      // 2. DESCARGAR datos del equipo
+      let pulled = 0;
+      try {
+        const data = await SYNC.pull(url, currentUser?.nombre||'DANIEL');
+        if (data?.patients?.length > 0) {
+          // Mezclar: mantener locales + agregar los del servidor que no existen
+          setPatients(prev => {
+            const localIds = new Set(prev.map(p=>p.id));
+            const remoteNew = data.patients.filter(p => !localIds.has(p.id));
+            // Actualizar los que ya existen con datos del servidor
+            const updated = prev.map(p => {
+              const remote = data.patients.find(r=>r.id===p.id);
+              return remote ? {...p, ...remote} : p;
+            });
+            const final = [...updated, ...remoteNew];
+            DB.set('patients', final);
+            pulled = remoteNew.length;
+            return final;
+          });
+        }
+      } catch(pullErr) {
+        // Pull falló pero push OK — no es crítico
+      }
+
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
       if (!silent) {
-        if (full) toast('✅ Sync completo — todos los pacientes enviados');
-        else {
-          const r = result || {};
-          const msg = r.nuevos > 0 || r.asistencia > 0
-            ? `✅ Enviado: ${r.nuevos} nuevos · ${r.asistencia} asistencias hoy`
-            : '✅ Sin cambios nuevos que enviar';
-          toast(msg);
-        }
+        if (full) toast('✅ Sync completo finalizado');
+        else if (pulled > 0) toast(`✅ Sync OK — ${pulled} paciente(s) nuevo(s) del equipo`);
+        else toast('✅ Sync OK — datos al día');
       }
       setTimeout(() => setSyncSt('idle'), 3000);
     } catch(e) {
