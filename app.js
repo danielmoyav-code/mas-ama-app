@@ -3929,7 +3929,7 @@ function App(){
       : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
-      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,autoSync,setAutoSync,usuarios,setUsuarios,currentUser})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{setAutoSync(cfg);DB.set('autoSync',cfg);},usuarios,setUsuarios,currentUser})
       : null,
 
     // Nav
