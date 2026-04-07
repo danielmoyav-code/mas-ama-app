@@ -1397,8 +1397,8 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
     try{
       const r = await fetch(urlInput);
       const j = await r.json();
-      if(j.ok) toast('✅ Conexión exitosa con Google Sheets');
-      else toast('⚠️ Respondió pero con error');
+      if(j.status==='ok') toast('✅ Conexión exitosa con Google Sheets');
+      else toast('⚠️ Respondió pero con error: ' + (j.message||''));
     } catch(e){ toast('❌ No se pudo conectar · Verifica la URL'); }
     setTest(false);
   }
