@@ -3136,7 +3136,6 @@ function ViewAgenda({ toast }) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── USUARIOS Y ROLES ─────────────────────────────────────────────────
-const ROLES = { JEFE:'jefe', KINE:'kine' };
 const USUARIOS_DEFAULT = [
   {
     nombre: 'DANIEL',
@@ -3165,7 +3164,7 @@ const SYNC = {
     DB.set('syncQueue', unique);
   },
 
-  // Envía datos al Google Sheet
+  // Envía datos al Google Sheet (usando GET para evitar CORS)
   push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
     if (!scriptUrl) throw new Error('URL no configurada');
     const payload = {
@@ -3191,11 +3190,13 @@ const SYNC = {
       }),
       sessionLog: Object.entries(sessionLog||{}).map(([k,v])=>({key:k,...v})),
     };
-    await fetch(scriptUrl, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload),
-    });
+    // Usar GET con datos codificados para evitar bloqueo CORS
+    const encoded = encodeURIComponent(JSON.stringify(payload));
+    const url = `${scriptUrl}?action=sync&data=${encoded}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Error de red');
+    const json = await res.json();
+    if (json.status !== 'ok') throw new Error(json.message || 'Error en sync');
     return true;
   },
 
@@ -3826,7 +3827,7 @@ function App(){
   ];
 
   // PIN lock
-  if(!unlocked) return React.createElement(PinScreen,{onUnlock:()=>setUnlocked(true)});
+  if(!unlocked) return React.createElement(PINScreen,{onUnlock:()=>setUnlocked(true)});
 
   return React.createElement('div',{id:'app'},
     // Top bar
@@ -3873,7 +3874,7 @@ function App(){
       : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
-      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:setAutoSync,userSession:currentUser,onSync:doSync})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,autoSync,setAutoSync,usuarios,setUsuarios,currentUser})
       : null,
 
     // Nav
