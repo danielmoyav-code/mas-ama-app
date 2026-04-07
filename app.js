@@ -3166,44 +3166,53 @@ const SYNC = {
     DB.set('syncQueue', unique);
   },
 
-  // Envía datos al Google Sheet (POST con text/plain para evitar CORS preflight)
+  // Envía datos en partes pequeñas por GET (sin bloqueo CORS)
   push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
     if (!scriptUrl) throw new Error('URL no configurada');
-    const payload = {
-      action: 'fullSync',
-      user: userName,
-      timestamp: new Date().toISOString(),
-      patients: patients.map(p => ({
-        id:p.id, nombre:p.nombre, rut:p.rut, taller:p.taller,
-        ciclo:p.ciclo, estado:p.estado, sexo:p.sexo, edad:p.edad,
-        fono:p.fono, empamPre:p.empamPre, empamEstado:p.empamEstado,
-        empamFecha:p.empamFecha, tugPre:p.tugPre, haqPre:p.haqPre,
-        eupDerPre:p.eupDerPre, eupIzqPre:p.eupIzqPre,
-        tugPost:p.tugPost, haqPost:p.haqPost,
-        resTug:p.resTug, resEupDer:p.resEupDer, resEupIzq:p.resEupIzq,
-        estadoFunc:p.estadoFunc, alertaAsist:p.alertaAsist,
-        totalPresencias:p.totalPresencias, totalSesiones:p.totalSesiones,
-        hta:p.hta, dm:p.dm, ecv:p.ecv, isNew:p.isNew,
-        createdAt:p.createdAt,
-      })),
-      attendance: Object.entries(attendanceLog||{}).map(([k,v])=>{
-        const [date,taller,rut]=k.split('||');
-        return {key:k, date, taller, rut, value:v};
-      }),
-      sessionLog: Object.entries(sessionLog||{}).map(([k,v])=>({key:k,...v})),
-    };
-    // Enviar como text/plain para evitar preflight CORS
-    const res = await fetch(scriptUrl, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    const text = await res.text();
-    try {
-      const json = JSON.parse(text);
-      if (json.status !== 'ok') throw new Error(json.message || 'Error en sync');
-    } catch(e) {
-      if (!text.includes('ok')) throw new Error('Error en respuesta');
+
+    // Función para enviar un chunk por GET
+    async function sendChunk(chunk) {
+      const encoded = encodeURIComponent(JSON.stringify(chunk));
+      const url = `${scriptUrl}?d=${encoded}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.status !== 'ok') throw new Error(json.message || 'Error en chunk');
     }
+
+    const patientData = patients.map(p => ({
+      id:p.id, nombre:p.nombre, rut:p.rut, taller:p.taller,
+      ciclo:p.ciclo, estado:p.estado, sexo:p.sexo, edad:p.edad,
+      fono:p.fono, empamPre:p.empamPre, empamEstado:p.empamEstado,
+      empamFecha:p.empamFecha, tugPre:p.tugPre, haqPre:p.haqPre,
+      eupDerPre:p.eupDerPre, eupIzqPre:p.eupIzqPre,
+      tugPost:p.tugPost, haqPost:p.haqPost,
+      resTug:p.resTug, resEupDer:p.resEupDer, resEupIzq:p.resEupIzq,
+      estadoFunc:p.estadoFunc, alertaAsist:p.alertaAsist,
+      totalPresencias:p.totalPresencias, totalSesiones:p.totalSesiones,
+      hta:p.hta, dm:p.dm, ecv:p.ecv, isNew:p.isNew, createdAt:p.createdAt,
+    }));
+
+    // Enviar pacientes en grupos de 30
+    const CHUNK = 30;
+    const ts = new Date().toISOString();
+    for (let i=0; i<patientData.length; i+=CHUNK) {
+      const slice = patientData.slice(i, i+CHUNK);
+      await sendChunk({ action:'syncPatients', user:userName, timestamp:ts, patients:slice });
+    }
+
+    // Enviar asistencia
+    const attArr = Object.entries(attendanceLog||{}).map(([k,v])=>{
+      const [date,taller,rut]=k.split('||');
+      return {key:k,date,taller,rut,value:v};
+    });
+    if (attArr.length > 0) {
+      for (let i=0; i<attArr.length; i+=50) {
+        await sendChunk({ action:'syncAttendance', user:userName, timestamp:ts, attendance:attArr.slice(i,i+50) });
+      }
+    }
+
+    // Log final
+    await sendChunk({ action:'logSync', user:userName, timestamp:ts, nPat:patientData.length, nAtt:attArr.length });
     return true;
   },
 
