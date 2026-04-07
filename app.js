@@ -3166,18 +3166,9 @@ const SYNC = {
     DB.set('syncQueue', unique);
   },
 
-  // Envía datos en partes pequeñas por GET (sin bloqueo CORS)
+  // Envía datos usando no-cors (funciona siempre con Google Apps Script)
   push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
     if (!scriptUrl) throw new Error('URL no configurada');
-
-    // Función para enviar un chunk por GET
-    async function sendChunk(chunk) {
-      const encoded = encodeURIComponent(JSON.stringify(chunk));
-      const url = `${scriptUrl}?d=${encoded}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.status !== 'ok') throw new Error(json.message || 'Error en chunk');
-    }
 
     const patientData = patients.map(p => ({
       id:p.id, nombre:p.nombre, rut:p.rut, taller:p.taller,
@@ -3192,27 +3183,40 @@ const SYNC = {
       hta:p.hta, dm:p.dm, ecv:p.ecv, isNew:p.isNew, createdAt:p.createdAt,
     }));
 
-    // Enviar pacientes en grupos de 30
-    const CHUNK = 5; // Grupos pequeños para evitar URLs largas
-    const ts = new Date().toISOString();
-    for (let i=0; i<patientData.length; i+=CHUNK) {
-      const slice = patientData.slice(i, i+CHUNK);
-      await sendChunk({ action:'syncPatients', user:userName, timestamp:ts, patients:slice });
-    }
-
-    // Enviar asistencia
     const attArr = Object.entries(attendanceLog||{}).map(([k,v])=>{
       const [date,taller,rut]=k.split('||');
       return {key:k,date,taller,rut,value:v};
     });
+
+    // Enviar en grupos de 5 con no-cors (Google Apps Script lo acepta)
+    const CHUNK = 5;
+    const ts = new Date().toISOString();
+
+    const sendChunk = (data) => fetch(scriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type':'text/plain'},
+      body: JSON.stringify(data),
+    });
+
+    // Pacientes en grupos de 5
+    for (let i=0; i<patientData.length; i+=CHUNK) {
+      await sendChunk({ action:'syncPatients', user:userName, timestamp:ts,
+        patients: patientData.slice(i, i+CHUNK) });
+    }
+
+    // Asistencia
     if (attArr.length > 0) {
       for (let i=0; i<attArr.length; i+=50) {
-        await sendChunk({ action:'syncAttendance', user:userName, timestamp:ts, attendance:attArr.slice(i,i+50) });
+        await sendChunk({ action:'syncAttendance', user:userName, timestamp:ts,
+          attendance: attArr.slice(i, i+50) });
       }
     }
 
-    // Log final
-    await sendChunk({ action:'logSync', user:userName, timestamp:ts, nPat:patientData.length, nAtt:attArr.length });
+    // Log
+    await sendChunk({ action:'logSync', user:userName, timestamp:ts,
+      nPat:patientData.length, nAtt:attArr.length });
+
     return true;
   },
 
@@ -3852,11 +3856,11 @@ function App(){
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
-      if(!silent) toast('✅ Datos enviados a Google Sheets');
+      if(!silent) toast('✅ Datos enviados — revisa el Google Sheet');
       setTimeout(() => setSyncSt('idle'), 3000);
     } catch(e) {
       setSyncSt('error');
-      if(!silent) toast('❌ Error: ' + (e.message||'Sin conexión'));
+      if(!silent) toast('❌ ' + (e.message||'Error de red'));
       setTimeout(() => setSyncSt('idle'), 5000);
     }
   }
