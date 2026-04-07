@@ -428,7 +428,7 @@ body{
 /* ── WELCOME BANNER (Home) ────────────────────────────── */
 .welcome-banner{
   background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 60%,var(--teal) 100%);
-  border-radius:var(--radius);padding:18px 16px;
+  border-radius:var(--radius);padding:18px 80px 18px 16px;
   margin-bottom:14px;position:relative;overflow:hidden;
   box-shadow:var(--shadow-lg);
 }
@@ -443,16 +443,17 @@ body{
   background:rgba(255,255,255,.04);
 }
 .welcome-banner h2{
-  color:#fff;font-size:20px;font-weight:900;
-  margin-bottom:4px;position:relative;
+  color:#fff;font-size:18px;font-weight:900;
+  margin-bottom:4px;position:relative;z-index:1;
 }
 .welcome-banner p{
-  color:rgba(255,255,255,.75);font-size:13px;
-  position:relative;line-height:1.5;
+  color:rgba(255,255,255,.75);font-size:12px;
+  position:relative;line-height:1.5;z-index:1;
 }
 .welcome-figure{
-  position:absolute;right:12px;top:50%;transform:translateY(-50%);
-  font-size:52px;opacity:.9;filter:drop-shadow(0 2px 8px rgba(0,0,0,.2));
+  position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  font-size:48px;opacity:.9;filter:drop-shadow(0 2px 8px rgba(0,0,0,.2));
+  pointer-events:none;
 }
 
 /* ── STAT ACCENT ──────────────────────────────────────── */
