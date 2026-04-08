@@ -832,7 +832,11 @@ function ViewNuevo({patients,setPatients,toast,onBack,doSync,autoSync}){
     const updated=existing
       ?patients.map(p=>p.rut===newP.rut?{...p,...newP,isNew:p.isNew}:p)
       :[...patients,newP];
-    setPatients(updated); DB.set('patients',updated);
+    // Marcar como dirty para sync inteligente
+    const updatedDirty = updated.map(p =>
+      p.rut === newP.rut ? SYNC2.markDirty(p) : p
+    );
+    setPatients(updatedDirty); DB.set('patients', updatedDirty);
     toast(existing?'✅ Paciente actualizado':'✅ Paciente registrado correctamente');
     if(autoSync?.url) setTimeout(()=>doSync(true), 1500);
     setSaving(false); onBack();
@@ -3159,83 +3163,113 @@ const TALLERES_POR_USUARIO = {
   'GONZALO': ['UV19 PM'],
 };
 
-// ── SYNC ENGINE ───────────────────────────────────────────────────────
-const SYNC = {
-  // Guarda en local + encola para sync
-  save: (key, data, syncQueue, setSyncQueue) => {
-    DB.set(key, data);
-    const queue = [...(syncQueue || []), { key, ts: Date.now() }];
-    const unique = queue.filter((v,i,a) => a.findIndex(x=>x.key===v.key)===i);
-    setSyncQueue(unique);
-    DB.set('syncQueue', unique);
-  },
+// ═══════════════════════════════════════════════════════════════════════
+//  SYNC ENGINE v2 — Token-based, Pull Autoritario
+// ═══════════════════════════════════════════════════════════════════════
 
-  // Sync inteligente — solo envía lo que cambió
-  push: async (patients, attendanceLog, sessionLog, sessionNotes, scriptUrl, userName) => {
-    if (!scriptUrl) throw new Error('URL no configurada');
+const SYNC2 = {
 
-    const send = (data) => fetch(scriptUrl, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'text/plain'},
-      body: JSON.stringify(data),
-    });
+  // Marca un paciente como modificado
+  markDirty: (patient) => ({ ...patient, _isDirty: true, _dirtyAt: Date.now() }),
 
-    const ts = new Date().toISOString();
-    const today = ts.slice(0,10);
+  // Filtra solo los que cambiaron
+  getDirty: (patients) => patients.filter(p => p._isDirty),
 
-    // 1. Solo pacientes nuevos (isNew=true) — normalmente 0-5
-    const nuevos = patients.filter(p => p.isNew === true || p.isNew === 'SI');
-    if (nuevos.length > 0) {
-      await send({ action:'syncPatients', user:userName, timestamp:ts, patients:nuevos });
-    }
+  // Limpia el flag después del pull
+  cleanAll: (patients) => patients.map(({ _isDirty, _dirtyAt, ...p }) => p),
 
-    // 2. Solo asistencia de HOY
-    const attHoy = Object.entries(attendanceLog||{})
+  // ── PUSH ─────────────────────────────────────────────────────────────
+  // Envía solo pacientes sucios + asistencia de hoy. No-cors fire-and-forget.
+  push: async (patients, attendanceLog, scriptUrl, userName) => {
+    const token = `${userName}_${Date.now()}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const dirty = SYNC2.getDirty(patients);
+    const attHoy = Object.entries(attendanceLog || {})
       .filter(([k]) => k.startsWith(today))
-      .map(([k,v]) => {
-        const [date,taller,rut] = k.split('||');
-        return {key:k, date, taller, rut, value:v};
+      .map(([k, v]) => {
+        const [date, taller, rut] = k.split('||');
+        return { key: k, date, taller, rut, value: v };
       });
-    if (attHoy.length > 0) {
-      await send({ action:'syncAttendance', user:userName, timestamp:ts, attendance:attHoy });
+
+    if (dirty.length === 0 && attHoy.length === 0) {
+      return { token: null, nPat: 0, nAtt: 0 }; // Nada que enviar
     }
 
-    // 3. Log
-    await send({ action:'logSync', user:userName, timestamp:ts, nPat:nuevos.length, nAtt:attHoy.length });
+    const payload = {
+      action: 'smartSync',
+      token,
+      user: userName,
+      timestamp: new Date().toISOString(),
+      patients: dirty.map(({ _isDirty, _dirtyAt, ...p }) => p),
+      attendance: attHoy,
+    };
 
-    return { nuevos: nuevos.length, asistencia: attHoy.length };
-  },
-
-  // Sync completo — solo cuando el usuario lo pide explícitamente
-  pushAll: async (patients, attendanceLog, scriptUrl, userName) => {
-    if (!scriptUrl) throw new Error('URL no configurada');
-    const send = (data) => fetch(scriptUrl, {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'text/plain'},
-      body: JSON.stringify(data),
+    // Fire-and-forget con no-cors
+    await fetch(scriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload),
     });
-    const ts = new Date().toISOString();
-    const CHUNK = 30;
-    for (let i=0; i<patients.length; i+=CHUNK) {
-      await send({ action:'syncPatients', user:userName, timestamp:ts, patients:patients.slice(i,i+CHUNK) });
-    }
-    await send({ action:'logSync', user:userName, timestamp:ts, nPat:patients.length, nAtt:0 });
-    return true;
+
+    return { token, nPat: dirty.length, nAtt: attHoy.length };
   },
 
-  // Baja datos del Google Sheet
-  pull: async (scriptUrl, userName) => {
-    if (!scriptUrl) throw new Error('URL no configurada');
-    try {
-      const url = `${scriptUrl}?action=pull&user=${encodeURIComponent(userName)}&t=${Date.now()}`;
-      const res = await fetch(url, { mode: 'cors' });
-      if (!res.ok) throw new Error('Error de red');
-      return await res.json();
-    } catch(e) {
-      throw new Error('No se pudo conectar con Google Sheets');
+  // ── POLL ─────────────────────────────────────────────────────────────
+  // Pregunta al servidor si ya procesó el token. Reintenta hasta 6 veces.
+  waitForToken: async (scriptUrl, token, maxRetries = 6) => {
+    if (!token) return true; // Sin token = nada que esperar
+    for (let i = 0; i < maxRetries; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const res = await fetch(
+          `${scriptUrl}?action=checkToken&token=${encodeURIComponent(token)}&t=${Date.now()}`
+        );
+        const data = await res.json();
+        if (data.processed) return true;
+      } catch (e) {
+        // Ignorar errores de red en el polling
+      }
     }
+    return false; // Timeout — igual hacer pull
+  },
+
+  // ── PULL ─────────────────────────────────────────────────────────────
+  // Descarga datos frescos del servidor. Reemplaza localStorage completo.
+  pull: async (scriptUrl, userName) => {
+    const url = `${scriptUrl}?action=pull&user=${encodeURIComponent(userName)}&t=${Date.now()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Error de red en pull');
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message || 'Error del servidor');
+    return data;
+  },
+
+  // ── SYNC COMPLETO (Push de todos los pacientes, para respaldo manual) ─
+  pushAll: async (patients, scriptUrl, userName) => {
+    const token = `${userName}_full_${Date.now()}`;
+    const CHUNK = 30;
+    const clean = patients.map(({ _isDirty, _dirtyAt, ...p }) => p);
+    for (let i = 0; i < clean.length; i += CHUNK) {
+      await fetch(scriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'smartSync',
+          token: i === 0 ? token : null,
+          user: userName,
+          timestamp: new Date().toISOString(),
+          patients: clean.slice(i, i + CHUNK),
+          attendance: [],
+        }),
+      });
+    }
+    return token;
   },
 };
+
 
 // ── FILTRO POR ROL ────────────────────────────────────────────────────
 function filtrarPorRol(patients, currentUser) {
@@ -3852,20 +3886,51 @@ function App(){
 
   async function doSync(silent=false, full=false) {
     const url = autoSync?.url || DB.get('autoSync',{})?.url || '';
-    if (!url) { toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
+    if (!url) { if(!silent) toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
     setSyncSt('syncing');
     try {
-      // Solo enviar — sin merge para evitar duplicados
+      // ── PASO 1: PUSH ─────────────────────────────────────────────
+      let token = null;
       if (full) {
-        await SYNC.pushAll(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
+        token = await SYNC2.pushAll(patients, url, currentUser?.nombre||'DANIEL');
+        if(!silent) toast('📦 Enviando todos los pacientes...');
       } else {
-        await SYNC.push(patients, attendanceLog, sessionLog, {}, url, currentUser?.nombre||'DANIEL');
+        const result = await SYNC2.push(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
+        token = result.token;
+        if (!token && !silent) {
+          toast('✅ Sin cambios nuevos que enviar');
+          setSyncSt('idle');
+          return;
+        }
       }
+
+      // ── PASO 2: ESPERAR TOKEN ─────────────────────────────────────
+      if(!silent) toast('⏳ Esperando confirmación del servidor...');
+      const confirmed = await SYNC2.waitForToken(url, token);
+      if (!confirmed && !silent) toast('⚠️ Timeout — descargando igual...');
+
+      // ── PASO 3: PULL AUTORITARIO ──────────────────────────────────
+      const data = await SYNC2.pull(url, currentUser?.nombre||'DANIEL');
+      if (data?.patients?.length > 0) {
+        const clean = SYNC2.cleanAll(data.patients);
+        setPatients(clean);
+        DB.set('patients', clean);
+      }
+
+      // Restaurar asistencia si viene del servidor
+      if (data?.attendance?.length > 0) {
+        const newLog = {};
+        data.attendance.forEach(a => { if(a.key) newLog[a.key] = a.asistencia || a.value; });
+        setAL(prev => ({ ...prev, ...newLog }));
+        DB.set('attendanceLog', { ...attendanceLog, ...newLog });
+      }
+
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
-      if (!silent) toast(full ? '✅ Sync completo finalizado' : '✅ Sync OK — datos enviados');
+      if (!silent) toast('✅ Sync completo — datos actualizados');
       setTimeout(() => setSyncSt('idle'), 3000);
+
     } catch(e) {
       setSyncSt('error');
       if(!silent) toast('❌ ' + (e.message||'Error de red'));
