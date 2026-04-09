@@ -1554,6 +1554,39 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
 
     // ── DATOS ─────────────────────────────────────────────────────────
     tab==='datos' && React.createElement('div',null,
+
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'📂 Importar Maestro Excel'),
+        React.createElement('div',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
+          'Importa el Excel MAESTRO para cargar todos los pacientes.'),
+        React.createElement('label',{style:{
+          display:'block',textAlign:'center',
+          background:'#1A3A5C',color:'#fff',borderRadius:12,padding:'14px 20px',
+          cursor:'pointer',fontWeight:800,fontSize:15,
+        }},
+          '📂 Seleccionar archivo Excel',
+          React.createElement('input',{
+            type:'file',accept:'.xlsx,.xls',style:{display:'none'},
+            onChange: async e=>{
+              const file=e.target.files[0];
+              if(!file) return;
+              toast('⏳ Procesando Excel...');
+              try{
+                const result=await parseMaestroExcel(file);
+                setPatients(result);
+                DB.set('patients',result);
+                toast('✅ '+result.length+' pacientes importados');
+              }catch(err){ toast('❌ Error: '+err); }
+              e.target.value='';
+            }
+          })
+        ),
+        patients.length>0&&React.createElement('div',{style:{
+          marginTop:10,padding:'8px 12px',background:'#D5F5E3',
+          borderRadius:10,fontSize:13,color:'#1E8449',fontWeight:700
+        }},'✅ '+patients.length+' pacientes cargados')
+      ),
+
       React.createElement('div',{className:'card'},
         React.createElement('div',{className:'card-title'},'💾 Respaldo'),
         React.createElement('div',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
