@@ -1106,24 +1106,73 @@ function ViewFicha({patient,patients,setPatients,toast}){
         React.createElement(EmpamChip,{estado:patient.empamEstado}),
         React.createElement(AsistChip,{alerta:patient.alertaAsist,
           presencias:patient.totalPresencias,total:patient.totalSesiones}),
+        React.createElement('button',{
+          onClick:e=>{
+            e.stopPropagation();
+            const rut=patient.rut;
+            navigator.clipboard.writeText(rut).catch(()=>{
+              const el=document.createElement('textarea');
+              el.value=rut; document.body.appendChild(el);
+              el.select(); document.execCommand('copy');
+              document.body.removeChild(el);
+            });
+            // Feedback visual en el botón
+            e.target.textContent='✅ Copiado';
+            setTimeout(()=>{ e.target.textContent='📋 RUT'; },1500);
+          },
+          style:{background:'#1A3A5C',color:'#fff',border:'none',borderRadius:8,
+                 padding:'4px 10px',fontSize:11,fontWeight:700,cursor:'pointer',
+                 marginTop:4,alignSelf:'flex-start'}
+        },'📋 RUT'),
         patient.isNew&&React.createElement(Chip,{color:'green'},'✨ Nuevo')
       ),
-      React.createElement('button',{
-        onClick:()=>{
-          const txt=`*MAS AMA — Resumen Paciente*%0A` +
-            `Nombre: ${patient.nombre}%0A` +
-            `RUT: ${patient.rut}%0A` +
-            `Taller: ${patient.taller}%0A` +
-            `EMPAM: ${patient.empamEstado||'—'}%0A` +
-            `Vence: ${patient.empamFecha||'—'}%0A` +
-            `TUG Pre: ${patient.tugPre||'—'} → Post: ${patient.tugPost||'—'}%0A` +
-            `HAQ Pre: ${patient.haqPre||'—'} → Post: ${patient.haqPost||'—'}%0A` +
-            `Asistencia: ${patient.totalPresencias||0}/${patient.totalSesiones||24} sesiones`;
-          window.open(`https://wa.me/?text=${txt}`,'_blank');
-        },
-        style:{marginTop:10,background:'#25D366',color:'#fff',border:'none',borderRadius:10,
-               padding:'8px 16px',fontSize:13,fontWeight:700,cursor:'pointer',width:'auto'}
-      },'📲 Compartir por WhatsApp')
+      // Botones de acción rápida
+      React.createElement('div',{style:{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginTop:12}},
+
+        // Copiar RUT
+        React.createElement('button',{
+          onClick:()=>{
+            navigator.clipboard.writeText(patient.rut).then(()=>{
+              toast('✅ RUT copiado — pégalo en Rayen');
+            }).catch(()=>{
+              // Fallback para móvil
+              const el = document.createElement('textarea');
+              el.value = patient.rut;
+              document.body.appendChild(el);
+              el.select();
+              document.execCommand('copy');
+              document.body.removeChild(el);
+              toast('✅ RUT copiado — pégalo en Rayen');
+            });
+          },
+          style:{background:'#1A3A5C',color:'#fff',border:'none',borderRadius:10,
+                 padding:'10px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}
+        },'📋 Copiar RUT'),
+
+        // Abrir Rayen
+        React.createElement('button',{
+          onClick:()=>{
+            window.open('https://administrativo.rayenaps.cl/#/mantenedor-citas','_blank');
+          },
+          style:{background:'#2471A3',color:'#fff',border:'none',borderRadius:10,
+                 padding:'10px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}
+        },'🏥 Abrir Rayen'),
+
+        // WhatsApp
+        React.createElement('button',{
+          onClick:()=>{
+            const txt=`*MAS AMA — Resumen Paciente*%0A` +
+              `Nombre: ${patient.nombre}%0A` +
+              `RUT: ${patient.rut}%0A` +
+              `Taller: ${patient.taller}%0A` +
+              `EMPAM: ${patient.empamEstado||'—'}%0A` +
+              `Asistencia: ${patient.totalPresencias||0} sesiones`;
+            window.open(`https://wa.me/?text=${txt}`,'_blank');
+          },
+          style:{background:'#25D366',color:'#fff',border:'none',borderRadius:10,
+                 padding:'10px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}
+        },'📲 WhatsApp')
+      )
     ),
     React.createElement('div',{className:'tabs'},
       [['general','General'],['clinico','Clínico'],['asistencia','Asistencia'],['editar','✏️ Editar']]
