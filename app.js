@@ -734,12 +734,38 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
               `${p.edad?p.edad+' años · ':''}${p.empamEstado||''}`),
             nota&&React.createElement('div',{style:{fontSize:11,color:'#7030A0',marginTop:2}},`📝 ${nota.slice(0,40)}${nota.length>40?'...':''}`)
           ),
-          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6}},
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}},
+            // Botón nota
             React.createElement('button',{
               onClick:()=>{ setNotePatient(p); setNoteText(getNote(key)); },
               style:{background:'none',border:'none',fontSize:18,cursor:'pointer',
                      color:nota?'#7030A0':'#ccc',padding:'4px'}
             },'📝'),
+            // Botón copiar RUT + abrir Rayen
+            React.createElement('button',{
+              onClick:e=>{
+                e.stopPropagation();
+                const rut = p.rut;
+                const btn = e.currentTarget;
+                // Copiar RUT
+                navigator.clipboard.writeText(rut).catch(()=>{
+                  const el=document.createElement('textarea');
+                  el.value=rut; document.body.appendChild(el);
+                  el.select(); document.execCommand('copy');
+                  document.body.removeChild(el);
+                });
+                // Feedback
+                btn.textContent='✅ Copiado';
+                btn.style.background='#375623';
+                setTimeout(()=>{ btn.textContent='🏥 Citar'; btn.style.background='#1A3A5C'; },1500);
+                // Abrir Rayen
+                window.open('https://administrativo.rayenaps.cl/#/mantenedor-citas','_blank');
+              },
+              style:{background:'#1A3A5C',color:'#fff',border:'none',borderRadius:8,
+                     padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',
+                     whiteSpace:'nowrap'}
+            },'🏥 Citar'),
+            // Toggle asistencia
             React.createElement('div',{className:'att-toggle'},
               React.createElement('button',{className:`att-btn ${att==='P'?'p-on':'p-off'}`,onClick:()=>setAtt(key,'P')},att==='P'?'✅':'P'),
               React.createElement('button',{className:`att-btn ${att==='A'?'a-on':'a-off'}`,onClick:()=>setAtt(key,'A')},att==='A'?'❌':'A')
