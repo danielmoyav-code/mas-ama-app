@@ -3889,48 +3889,47 @@ function App(){
     if (!url) { if(!silent) toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
     setSyncSt('syncing');
     try {
-      // ── PASO 1: PUSH ─────────────────────────────────────────────
-      let token = null;
+      // PASO 1: Enviar cambios locales al servidor
       if (full) {
-        token = await SYNC2.pushAll(patients, url, currentUser?.nombre||'DANIEL');
-        if(!silent) toast('📦 Enviando todos los pacientes...');
+        await SYNC2.pushAll(patients, url, currentUser?.nombre||'DANIEL');
       } else {
-        const result = await SYNC2.push(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
-        token = result.token;
-        if (!token && !silent) {
-          toast('✅ Sin cambios nuevos que enviar');
-          setSyncSt('idle');
-          return;
+        await SYNC2.push(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
+      }
+
+      // PASO 2: Esperar que el servidor procese (fijo 4 segundos)
+      await new Promise(r => setTimeout(r, 4000));
+
+      // PASO 3: Descargar solo pacientes NUEVOS del servidor (nunca reemplazar)
+      try {
+        const data = await SYNC2.pull(url, currentUser?.nombre||'DANIEL');
+        const localCount = patients.length;
+        const serverCount = data?.patients?.length || 0;
+
+        // SEGURO PERMANENTE: si el servidor devuelve menos pacientes que los locales,
+        // algo está mal — ignorar el pull y proteger los datos locales
+        if (serverCount < localCount * 0.8) {
+          console.warn(`Pull ignorado: servidor tiene ${serverCount}, local tiene ${localCount}`);
+          // No hacer nada — datos locales están seguros
+        } else if (serverCount > 0) {
+          setPatients(prev => {
+            const localIds = new Set(prev.map(p => p.id).filter(Boolean));
+            const soloNuevos = data.patients.filter(p => p.id && !localIds.has(p.id));
+            if (soloNuevos.length === 0) return prev;
+            const resultado = [...prev, ...soloNuevos];
+            DB.set('patients', resultado);
+            if (!silent) toast(`✅ ${soloNuevos.length} paciente(s) nuevo(s) del equipo`);
+            return resultado;
+          });
         }
-      }
-
-      // ── PASO 2: ESPERAR TOKEN ─────────────────────────────────────
-      if(!silent) toast('⏳ Esperando confirmación del servidor...');
-      const confirmed = await SYNC2.waitForToken(url, token);
-      if (!confirmed && !silent) toast('⚠️ Timeout — descargando igual...');
-
-      // ── PASO 3: PULL AUTORITARIO ──────────────────────────────────
-      const data = await SYNC2.pull(url, currentUser?.nombre||'DANIEL');
-      if (data?.patients?.length > 0) {
-        const clean = SYNC2.cleanAll(data.patients);
-        setPatients(clean);
-        DB.set('patients', clean);
-      }
-
-      // Restaurar asistencia si viene del servidor
-      if (data?.attendance?.length > 0) {
-        const newLog = {};
-        data.attendance.forEach(a => { if(a.key) newLog[a.key] = a.asistencia || a.value; });
-        setAL(prev => ({ ...prev, ...newLog }));
-        DB.set('attendanceLog', { ...attendanceLog, ...newLog });
+      } catch(pullErr) {
+        // Pull falló — datos locales intactos
       }
 
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync', now);
       setSyncSt('ok');
-      if (!silent) toast('✅ Sync completo — datos actualizados');
+      if (!silent) toast('✅ Sync OK');
       setTimeout(() => setSyncSt('idle'), 3000);
-
     } catch(e) {
       setSyncSt('error');
       if(!silent) toast('❌ ' + (e.message||'Error de red'));
