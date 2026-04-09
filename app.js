@@ -634,6 +634,9 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
   const [search,setSearch]=useState('');
   const [notePatient,setNotePatient]=useState(null);
   const [noteText,setNoteText]=useState('');
+  const [colaCitacion,setCola]=useState([]);
+  const [showCola,setShowCola]=useState(false);
+  const [colaIdx,setColaIdx]=useState(0);
 
   const tallerPacs=useMemo(()=>
     patients.filter(p=>p.taller===selTaller&&
@@ -709,10 +712,26 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
         `📝 ${conNota} nota${conNota>1?'s':''} de sesión`)
     ),
     // Actions
-    React.createElement('div',{className:'btn-row',style:{marginBottom:10}},
+    React.createElement('div',{className:'btn-row',style:{marginBottom:6}},
       React.createElement('button',{className:'btn btn-ghost btn-sm',onClick:()=>setStep('taller')},'← Taller'),
       React.createElement('button',{className:'btn btn-green btn-sm',onClick:()=>marcarTodos('P')},'✅ Todos Pres.'),
       React.createElement('button',{className:'btn btn-red btn-sm',onClick:()=>marcarTodos('A')},'❌ Todos Aus.')
+    ),
+    // Cola citación helper
+    React.createElement('div',{style:{
+      display:'flex',alignItems:'center',gap:8,marginBottom:10,
+      padding:'8px 12px',background:'#EBF4FF',borderRadius:10,fontSize:12,
+    }},
+      React.createElement('span',{style:{color:'#1A3A5C',fontWeight:700}},'🏥 Cola Citación:'),
+      React.createElement('span',{style:{color:'#555'}},
+        colaCitacion.length > 0
+          ? `${colaCitacion.length} paciente(s) seleccionado(s)`
+          : 'Marca ☑ para agregar a la cola'),
+      colaCitacion.length > 0 && React.createElement('button',{
+        onClick:()=>setCola([]),
+        style:{marginLeft:'auto',background:'none',border:'none',
+               color:'#C00000',fontSize:11,cursor:'pointer',fontWeight:700}
+      },'✕ Limpiar')
     ),
     // Search
     React.createElement('div',{className:'search-wrap'},
@@ -735,6 +754,22 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
             nota&&React.createElement('div',{style:{fontSize:11,color:'#7030A0',marginTop:2}},`📝 ${nota.slice(0,40)}${nota.length>40?'...':''}`)
           ),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}},
+            // Checkbox cola citación
+            React.createElement('div',{
+              onClick:e=>{
+                e.stopPropagation();
+                setCola(prev=>prev.includes(p.id)
+                  ? prev.filter(x=>x!==p.id)
+                  : [...prev, p.id]);
+              },
+              style:{
+                width:24,height:24,borderRadius:6,border:'2px solid',
+                borderColor:colaCitacion.includes(p.id)?'#1A3A5C':'#ccc',
+                background:colaCitacion.includes(p.id)?'#1A3A5C':'#fff',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                cursor:'pointer',flexShrink:0,fontSize:14,color:'#fff',fontWeight:800,
+              }
+            }, colaCitacion.includes(p.id)?'✓':''),
             // Botón nota
             React.createElement('button',{
               onClick:()=>{ setNotePatient(p); setNoteText(getNote(key)); },
@@ -773,11 +808,137 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
           )
         );
       }),
-    // Save
-    React.createElement('div',{style:{marginTop:14}},
+    // Save + Cola de citación
+    React.createElement('div',{style:{marginTop:14,display:'flex',flexDirection:'column',gap:8}},
       React.createElement('button',{className:'btn btn-green',
         onClick:()=>toast(`💾 Lista guardada — ${present} presentes, ${absent} ausentes`)},
-        '💾 Confirmar Lista')),
+        '💾 Confirmar Lista'),
+      colaCitacion.length > 0 && React.createElement('button',{
+        className:'btn btn-primary',
+        onClick:()=>setShowCola(true),
+        style:{background:'#1A3A5C'}
+      },`🏥 Iniciar Cola de Citación (${colaCitacion.length} pacientes)`)
+    ),
+
+    // ── MODAL: COLA DE CITACIÓN ──────────────────────────────────────
+    showCola && (() => {
+      const colaIds = colaCitacion;
+      const pacientesCola = tallerPacs.filter(p => colaIds.includes(p.id));
+      const actual = pacientesCola[colaIdx];
+      if (!actual) return React.createElement('div',{className:'overlay',
+        onClick:()=>{ setShowCola(false); setColaIdx(0); }
+      },
+        React.createElement('div',{className:'sheet'},
+          React.createElement('div',{className:'sheet-handle'}),
+          React.createElement('div',{style:{textAlign:'center',padding:24}},
+            React.createElement('div',{style:{fontSize:48,marginBottom:12}},'🎉'),
+            React.createElement('div',{style:{fontWeight:900,fontSize:20,marginBottom:8}},'¡Cola completada!'),
+            React.createElement('div',{style:{fontSize:14,color:'#777',marginBottom:20}},
+              `Citaste a ${colaIds.length} paciente(s)`),
+            React.createElement('button',{className:'btn btn-primary',
+              onClick:()=>{ setShowCola(false); setColaIdx(0); setCola([]); }
+            },'✅ Terminar')
+          )
+        )
+      );
+
+      // Auto-copiar RUT del paciente actual
+      if (actual?.rut) {
+        navigator.clipboard.writeText(actual.rut).catch(()=>{
+          const el=document.createElement('textarea');
+          el.value=actual.rut; document.body.appendChild(el);
+          el.select(); document.execCommand('copy');
+          document.body.removeChild(el);
+        });
+      }
+
+      return React.createElement('div',{className:'overlay',
+        onClick:e=>{ if(e.target===e.currentTarget) setShowCola(false); }
+      },
+        React.createElement('div',{className:'sheet'},
+          React.createElement('div',{className:'sheet-handle'}),
+
+          // Progreso
+          React.createElement('div',{style:{
+            background:'#1A3A5C',borderRadius:12,padding:'12px 16px',marginBottom:14
+          }},
+            React.createElement('div',{style:{
+              display:'flex',justifyContent:'space-between',
+              color:'rgba(255,255,255,.7)',fontSize:12,marginBottom:6
+            }},
+              React.createElement('span',null,'COLA DE CITACIÓN'),
+              React.createElement('span',null,`${colaIdx+1} de ${pacientesCola.length}`)
+            ),
+            React.createElement('div',{style:{
+              background:'rgba(255,255,255,.2)',borderRadius:20,height:6,overflow:'hidden'
+            }},
+              React.createElement('div',{style:{
+                background:'#58D68D',height:'100%',borderRadius:20,
+                width:`${((colaIdx+1)/pacientesCola.length)*100}%`,
+                transition:'width .3s'
+              }})
+            )
+          ),
+
+          // Paciente actual
+          React.createElement('div',{style:{textAlign:'center',marginBottom:20}},
+            React.createElement(Avatar,{sexo:actual.sexo,nombre:actual.nombre}),
+            React.createElement('div',{style:{fontWeight:900,fontSize:18,marginTop:8}},actual.nombre),
+            React.createElement('div',{style:{
+              fontSize:24,fontWeight:900,color:'#1A3A5C',
+              letterSpacing:2,marginTop:4,background:'#EBF4FF',
+              borderRadius:10,padding:'8px 20px',display:'inline-block'
+            }},actual.rut),
+            React.createElement('div',{style:{fontSize:12,color:'#58D68D',fontWeight:700,marginTop:4}},
+              '✅ RUT copiado automáticamente')
+          ),
+
+          // Instrucción
+          React.createElement('div',{style:{
+            background:'#FFF9E6',borderRadius:10,padding:'10px 14px',
+            fontSize:13,color:'#7A5C00',marginBottom:16,lineHeight:1.5
+          }},
+            '1. Pega el RUT en Rayen → 2. Cita al paciente → 3. Vuelve aquí → 4. Presiona "Siguiente"'
+          ),
+
+          // Botones
+          React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+            React.createElement('button',{
+              onClick:()=>{
+                window.open('https://administrativo.rayenaps.cl/#/mantenedor-citas','_blank');
+              },
+              style:{
+                background:'#2471A3',color:'#fff',border:'none',borderRadius:12,
+                padding:'14px',fontSize:15,fontWeight:800,cursor:'pointer'
+              }
+            },'🏥 Abrir Rayen'),
+            React.createElement('div',{className:'btn-row'},
+              React.createElement('button',{
+                className:'btn btn-ghost',style:{flex:1},
+                onClick:()=>setShowCola(false)
+              },'⏸ Pausar'),
+              React.createElement('button',{
+                className:'btn btn-green',style:{flex:2},
+                onClick:()=>{
+                  const next = colaIdx + 1;
+                  setColaIdx(next);
+                  // Pre-copiar RUT del siguiente
+                  const siguiente = pacientesCola[next];
+                  if (siguiente?.rut) {
+                    setTimeout(()=>{
+                      navigator.clipboard.writeText(siguiente.rut).catch(()=>{});
+                    }, 500);
+                  }
+                }
+              }, colaIdx < pacientesCola.length - 1
+                ? `Siguiente → (${pacientesCola.length - colaIdx - 1} restantes)`
+                : '✅ Finalizar Cola'
+              )
+            )
+          )
+        )
+      );
+    })(),
 
     // Note modal
     notePatient&&React.createElement('div',{className:'overlay',onClick:e=>{ if(e.target===e.currentTarget) setNotePatient(null); }},
