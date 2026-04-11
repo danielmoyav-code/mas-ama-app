@@ -65,8 +65,19 @@ function genId(nombre,rut){
   return base||`PAC_${Date.now()}`;
 }
 function calcEmpamEstado(fecha){
-  if(!fecha) return 'PENDIENTE';
+  if(!fecha||fecha==='PEND') return 'PENDIENTE';
   try{
+    // Manejar "Prox. ENE/FEB/..." — mes aproximado año 2026
+    const proxMatch = String(fecha).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
+    if(proxMatch){
+      const meses={ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
+      const mesNum=meses[proxMatch[1].toUpperCase()];
+      const f=new Date(2026,mesNum-1,1);
+      const dias=Math.round((f-TODAY)/86400000);
+      if(dias<0) return 'VENCIDO';
+      if(dias<=30) return 'VENCE PRONTO';
+      return 'VIGENTE';
+    }
     const d=new Date(fecha); if(isNaN(d)) return 'PENDIENTE';
     const dias=Math.round((d-TODAY)/86400000);
     if(dias<0) return 'VENCIDO';
