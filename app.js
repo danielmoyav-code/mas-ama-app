@@ -4285,52 +4285,58 @@ function App(){
     const url = autoSync?.url || DB.get('autoSync',{})?.url || '';
     if (!url) { if(!silent) toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
     setSyncSt('syncing');
+    if(!silent) toast('📤 Enviando datos...');
     try {
-      // PASO 1: Enviar cambios locales al servidor
-      if (full) {
-        await SYNC2.pushAll(patients, url, currentUser?.nombre||'DANIEL');
-      } else {
-        await SYNC2.push(patients, attendanceLog, url, currentUser?.nombre||'DANIEL');
-      }
+      // PASO 1: Enviar TODOS los datos al servidor
+      const clean = patients.map(({_isDirty,_dirtyAt,...p})=>p);
+      const attArr = Object.entries(attendanceLog||{}).map(([k,v])=>{
+        const[date,taller,rut]=k.split('||');
+        return {key:k,date,taller,rut,value:v};
+      });
+      await fetch(url,{
+        method:'POST', mode:'no-cors',
+        headers:{'Content-Type':'text/plain'},
+        body:JSON.stringify({
+          action:'fullPush',
+          user:'DANIEL',
+          timestamp:new Date().toISOString(),
+          patients:clean,
+          attendance:attArr,
+        }),
+      });
 
-      // PASO 2: Esperar que el servidor procese (fijo 4 segundos)
-      await new Promise(r => setTimeout(r, 4000));
+      // PASO 2: Esperar 5 segundos que Google procese
+      if(!silent) toast('⏳ Esperando confirmación...');
+      await new Promise(r=>setTimeout(r,5000));
 
-      // PASO 3: Descargar solo pacientes NUEVOS del servidor (nunca reemplazar)
-      try {
-        const data = await SYNC2.pull(url, currentUser?.nombre||'DANIEL');
-        const localCount = patients.length;
-        const serverCount = data?.patients?.length || 0;
+      // PASO 3: Descargar datos frescos del servidor
+      const res = await fetch(`${url}?action=pull&user=DANIEL&t=${Date.now()}`);
+      if(!res.ok) throw new Error('Error de red en descarga');
+      const data = await res.json();
 
-        // SEGURO PERMANENTE: si el servidor devuelve menos pacientes que los locales,
-        // algo está mal — ignorar el pull y proteger los datos locales
-        if (serverCount < localCount * 0.8) {
-          console.warn(`Pull ignorado: servidor tiene ${serverCount}, local tiene ${localCount}`);
-          // No hacer nada — datos locales están seguros
-        } else if (serverCount > 0) {
-          setPatients(prev => {
-            const localIds = new Set(prev.map(p => p.id).filter(Boolean));
-            const soloNuevos = data.patients.filter(p => p.id && !localIds.has(p.id));
-            if (soloNuevos.length === 0) return prev;
-            const resultado = [...prev, ...soloNuevos];
-            DB.set('patients', resultado);
-            if (!silent) toast(`✅ ${soloNuevos.length} paciente(s) nuevo(s) del equipo`);
-            return resultado;
-          });
+      if(data.status==='ok' && Array.isArray(data.patients) && data.patients.length > 0) {
+        // SEGURO: solo reemplazar si el servidor tiene datos razonables
+        if(data.patients.length >= patients.length * 0.8) {
+          setPatients(data.patients);
+          DB.set('patients', data.patients);
         }
-      } catch(pullErr) {
-        // Pull falló — datos locales intactos
+        // Restaurar asistencia si viene del servidor
+        if(Array.isArray(data.attendance) && data.attendance.length > 0) {
+          const newLog={};
+          data.attendance.forEach(a=>{ if(a.key) newLog[a.key]=a.value; });
+          setAL(newLog); DB.set('attendanceLog',newLog);
+        }
       }
 
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
-      setLastSync(now); DB.set('lastSync', now);
+      setLastSync(now); DB.set('lastSync',now);
       setSyncSt('ok');
-      if (!silent) toast('✅ Sync OK');
-      setTimeout(() => setSyncSt('idle'), 3000);
+      if(!silent) toast('✅ Sincronizado correctamente');
+      setTimeout(()=>setSyncSt('idle'),3000);
     } catch(e) {
       setSyncSt('error');
-      if(!silent) toast('❌ ' + (e.message||'Error de red'));
-      setTimeout(() => setSyncSt('idle'), 5000);
+      if(!silent) toast('❌ '+(e.message||'Error de red'));
+      setTimeout(()=>setSyncSt('idle'),5000);
     }
   }
 
