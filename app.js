@@ -1686,7 +1686,7 @@ function ViewExportar({patients,attendanceLog,toast}){
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: CONFIGURACIÓN
 // ─────────────────────────────────────────────────────────────────────
-function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSession,onSync}){
+function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSession,onSync,scriptUrl,setScriptUrlProp}){
   const [tab,setTab]       = useState('general');
   const [urlInput,setUrl]  = useState(syncConfig?.url||'');
   const [testing,setTest]  = useState(false);
@@ -1694,7 +1694,8 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
   function saveUrl(){
     const cfg = {...(syncConfig||{}), url:urlInput, enabled:!!urlInput};
     setSyncConfig(cfg);
-    toast(urlInput ? '✅ URL guardada · Sync activado' : '⚠️ Sync desactivado');
+    if(setScriptUrlProp) setScriptUrlProp(urlInput);
+    toast(urlInput ? '✅ URL guardada — la app leerá tus archivos de Drive' : '⚠️ URL eliminada');
   }
 
   async function testConnection(){
@@ -1791,36 +1792,50 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
 
     // ── SYNC ─────────────────────────────────────────────────────────
     tab==='sync' && React.createElement('div',null,
-      // Estado actual
-      React.createElement('div',{className:'card',style:{
-        background: syncConfig?.enabled ? '#D5F5E3' : '#FEF9E7',
-        border:`1.5px solid ${syncConfig?.enabled ? '#1E8449' : '#F4D03F'}`
+
+      // Info modo solo lectura
+      React.createElement('div',{style:{
+        background:'#D5F5E3',border:'1.5px solid #1E8449',
+        borderRadius:12,padding:'14px 16px',marginBottom:12
       }},
-        React.createElement('div',{style:{fontWeight:800,fontSize:15,marginBottom:4}},
-          syncConfig?.enabled ? '✅ Sync activo' : '⚠️ Sync no configurado'),
-        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.5}},
-          syncConfig?.enabled
-            ? 'Los datos se sincronizan con Google Sheets automáticamente.'
-            : 'Configura la URL para compartir datos con tu equipo en tiempo real.')
+        React.createElement('div',{style:{fontWeight:800,fontSize:15,color:'#1E8449',marginBottom:6}},
+          '🔒 Modo Solo Lectura'),
+        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.6}},
+          'La app lee tus archivos de Drive sin modificar nada. ',
+          React.createElement('strong',null,'100% seguro — '),
+          'tus colegas no verán ningún cambio.')
       ),
 
-      // Instrucciones
+      // Estado
+      React.createElement('div',{className:'card',style:{
+        background: syncConfig?.enabled ? '#EBF5FB' : '#FEF9E7',
+        border:`1.5px solid ${syncConfig?.enabled ? '#2471A3' : '#F4D03F'}`
+      }},
+        React.createElement('div',{style:{fontWeight:800,fontSize:14,marginBottom:4}},
+          syncConfig?.enabled ? '✅ Script configurado' : '⚠️ Sin configurar'),
+        React.createElement('div',{style:{fontSize:12,color:'#555',lineHeight:1.5}},
+          syncConfig?.enabled
+            ? 'La app leerá los datos actualizados de tus archivos en Drive.'
+            : 'Configura el script para que la app lea tus archivos.')
+      ),
+
+      // Instrucciones claras
       React.createElement('div',{className:'card'},
         React.createElement('div',{className:'card-title'},'📋 Cómo configurar — 3 pasos'),
         [
-          '1. Crea un Google Sheets nuevo en Drive',
-          '2. Ve a Extensiones → Apps Script → pega el código del script',
-          '3. Despliega como "Aplicación web" → copia la URL y pégala abajo',
+          '1. Abre tu Google Apps Script (el que ya tienes configurado)',
+          '2. Reemplaza el código con el nuevo apps_script_v8.js',
+          '3. Implementa nueva versión → copia la URL y pégala abajo',
         ].map((s,i)=>React.createElement('div',{key:i,style:{
           fontSize:13,padding:'8px 0',borderBottom:'1px solid #f0f0f0',
-          display:'flex',gap:10,color:'#444',lineHeight:1.5
-        }},s))
-      ),
+          color:'#444',lineHeight:1.5
+        }},`${i+1}. ${s.slice(3)}`)
+      )),
 
       // URL input
       React.createElement('div',{className:'card'},
         React.createElement('div',{className:'card-title'},'URL del Apps Script'),
-        React.createElement(Field,{label:'Pega aquí la URL de tu script'},
+        React.createElement(Field,{label:'Pega aquí la URL'},
           React.createElement('input',{
             type:'url', value:urlInput,
             onChange:e=>setUrl(e.target.value),
@@ -1839,18 +1854,14 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
         )
       ),
 
-      // Sync manual
-      syncConfig?.enabled && React.createElement('div',null,
-        React.createElement('p',{style:{fontSize:12,color:'#888',marginBottom:8,lineHeight:1.5}},
-          '💡 Sync diario: envía solo lo nuevo de hoy (rápido). Sync completo: envía todo.'),
-        React.createElement('div',{className:'btn-row'},
-          React.createElement('button',{className:'btn btn-primary',style:{flex:2},
-            onClick:()=>onSync&&onSync('push')
-          },'⬆️ Sync diario'),
-          React.createElement('button',{className:'btn btn-ghost',style:{flex:2,fontSize:12},
-            onClick:()=>{ if(confirm('Envía los '+patients.length+' pacientes completos. Puede tardar 1-2 min. ¿Continuar?')) onSync&&onSync('pushAll'); }
-          },'📦 Sync completo')
-        )
+      // Botón actualizar datos
+      syncConfig?.enabled && React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'📥 Actualizar datos'),
+        React.createElement('p',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
+          'Lee los archivos de Gestión y Asistencia desde Drive y actualiza la app.'),
+        React.createElement('button',{className:'btn btn-primary',
+          onClick:()=>onSync&&onSync()
+        },'🔄 Actualizar desde Drive ahora')
       )
     ),
 
@@ -4267,12 +4278,13 @@ function App(){
   const [sessionLog,setSL]     = useState(()=>DB.get('sessionLog',{}));
   const [selPatient,setSel]    = useState(null);
   const [toastMsg,setToast]    = useState('');
-  // Usuarios y sync
-  const [usuarios,setUsuarios] = useState(()=>DB.get('usuarios', USUARIOS_DEFAULT));
-  const [currentUser,setCU]    = useState(()=>DB.get('currentUser', USUARIOS_DEFAULT[0]));
+  // Solo lectura desde Google Sheets
   const [syncStatus,setSyncSt] = useState('idle');
   const [lastSync,setLastSync] = useState(()=>DB.get('lastSync',''));
-  const [autoSync,setAutoSync] = useState(()=>DB.get('autoSync',{url:'',enabled:false}));
+  const [scriptUrl,setScriptUrl] = useState(()=>DB.get('scriptUrl',''));
+  const [autoSync]             = useState(()=>DB.get('autoSync',{url:DB.get('scriptUrl',''),enabled:!!DB.get('scriptUrl','')}));
+  const [currentUser]          = useState(USUARIOS_DEFAULT[0]);
+  const [usuarios]             = useState(USUARIOS_DEFAULT);
 
   useEffect(()=>{
     try{ if(unlocked) sessionStorage.setItem('masama_unlocked','1');
@@ -4281,64 +4293,59 @@ function App(){
 
   function toast(msg){ setToast(msg); setTimeout(()=>setToast(''),2600); }
 
-  async function doSync(silent=false, full=false) {
-    const url = autoSync?.url || DB.get('autoSync',{})?.url || '';
-    if (!url) { if(!silent) toast('⚙️ Ve a Config → Sync y guarda la URL primero'); return; }
+  // ── ACTUALIZAR desde Google Sheets (solo lectura) ──────────────────
+  async function doSync(silent=false) {
+    const url = DB.get('scriptUrl','');
+    if (!url) { if(!silent) toast('⚙️ Ve a Config y configura la URL del script'); return; }
     setSyncSt('syncing');
-    if(!silent) toast('📤 Enviando datos...');
+    if(!silent) toast('📥 Leyendo datos del equipo...');
     try {
-      // PASO 1: Enviar TODOS los datos al servidor
-      const clean = patients.map(({_isDirty,_dirtyAt,...p})=>p);
-      const attArr = Object.entries(attendanceLog||{}).map(([k,v])=>{
-        const[date,taller,rut]=k.split('||');
-        return {key:k,date,taller,rut,value:v};
-      });
-      await fetch(url,{
-        method:'POST', mode:'no-cors',
-        headers:{'Content-Type':'text/plain'},
-        body:JSON.stringify({
-          action:'fullPush',
-          user:'DANIEL',
-          timestamp:new Date().toISOString(),
-          patients:clean,
-          attendance:attArr,
-        }),
-      });
-
-      // PASO 2: Esperar 5 segundos que Google procese
-      if(!silent) toast('⏳ Esperando confirmación...');
-      await new Promise(r=>setTimeout(r,5000));
-
-      // PASO 3: Descargar datos frescos del servidor
-      const res = await fetch(`${url}?action=pull&user=DANIEL&t=${Date.now()}`);
-      if(!res.ok) throw new Error('Error de red en descarga');
+      const res = await fetch(`${url}?action=all&t=${Date.now()}`);
+      if(!res.ok) throw new Error('Error de red');
       const data = await res.json();
+      if(data.status !== 'ok') throw new Error(data.message||'Error del servidor');
 
-      if(data.status==='ok' && Array.isArray(data.patients) && data.patients.length > 0) {
-        // SEGURO: solo reemplazar si el servidor tiene datos razonables
-        if(data.patients.length >= patients.length * 0.8) {
-          setPatients(data.patients);
-          DB.set('patients', data.patients);
-        }
-        // Restaurar asistencia si viene del servidor
-        if(Array.isArray(data.attendance) && data.attendance.length > 0) {
-          const newLog={};
-          data.attendance.forEach(a=>{ if(a.key) newLog[a.key]=a.value; });
-          setAL(newLog); DB.set('attendanceLog',newLog);
-        }
+      // Procesar pacientes
+      let pacs = data.pacientes || [];
+      // Cruzar con asistencia para asignar taller y presencias
+      if(data.asistencia) {
+        const { talleresPorRut, presenciasPorRut } = data.asistencia;
+        pacs = pacs.map(p => {
+          const rut = p.rut;
+          const taller = talleresPorRut[rut] || p.taller || 'SIN ASIGNAR';
+          const pres = presenciasPorRut[rut] || 0;
+          return {
+            ...p,
+            taller,
+            totalPresencias: pres,
+            alertaAsist: pres < 10 ? 'BAJO' : 'OK',
+            empamDias: p.empamFecha ? Math.round((new Date(p.empamFecha)-new Date())/86400000) : null,
+          };
+        });
+      }
+
+      if(pacs.length > 0) {
+        setPatients(pacs);
+        DB.set('patients', pacs);
       }
 
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync',now);
       setSyncSt('ok');
-      if(!silent) toast('✅ Sincronizado correctamente');
+      if(!silent) toast(`✅ ${pacs.length} pacientes actualizados desde Drive`);
       setTimeout(()=>setSyncSt('idle'),3000);
     } catch(e) {
       setSyncSt('error');
-      if(!silent) toast('❌ '+(e.message||'Error de red'));
+      if(!silent) toast('❌ '+(e.message||'Error al leer los archivos'));
       setTimeout(()=>setSyncSt('idle'),5000);
     }
   }
+
+  // Actualizar al abrir la app si hay URL configurada
+  useEffect(()=>{
+    const url = DB.get('scriptUrl','');
+    if(url && patients.length === 0) doSync(true);
+  },[]);
 
   const visiblePatients = filtrarPorRol(patients, currentUser);
   const isJefe = currentUser?.rol === ROLES.JEFE;
@@ -4423,7 +4430,7 @@ function App(){
       : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
-      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{setAutoSync(cfg);DB.set('autoSync',cfg);},usuarios,setUsuarios,currentUser,onSync:(type)=>doSync(false,type==='pushAll')})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{DB.set('autoSync',cfg);},userSession:currentUser,onSync:()=>doSync(false),scriptUrl,setScriptUrlProp:(url)=>{setScriptUrl(url);DB.set('scriptUrl',url);DB.set('autoSync',{url,enabled:!!url});}})
       : null,
 
     // Nav
