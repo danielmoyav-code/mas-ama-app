@@ -750,8 +750,13 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
           React.createElement(Avatar,{sexo:p.sexo,nombre:p.nombre}),
           React.createElement('div',{style:{flex:1,minWidth:0}},
             React.createElement('div',{className:'att-name'},p.nombre),
-            React.createElement('div',{className:'att-sub'},
-              `${p.edad?p.edad+' años · ':''}${p.empamEstado||''}`),
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginTop:2}},
+              p.edad&&React.createElement('span',{style:{fontSize:11,color:'#888'}},p.edad+' años'),
+              React.createElement(EmpamChip,{estado:p.empamEstado}),
+              p.empamFecha&&(p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO'))&&
+                React.createElement('span',{style:{fontSize:11,color:'#C00000',fontWeight:700}},
+                  p.empamDias!=null?(p.empamDias<0?`Vencido hace ${Math.abs(p.empamDias)}d`:`Vence en ${p.empamDias}d`):'')
+            ),
             nota&&React.createElement('div',{style:{fontSize:11,color:'#7030A0',marginTop:2}},`📝 ${nota.slice(0,40)}${nota.length>40?'...':''}`)
           ),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}},
