@@ -1509,6 +1509,50 @@ function ViewFicha({patient,patients,setPatients,toast}){
 // VIEW: ALERTAS
 // ─────────────────────────────────────────────────────────────────────
 function ViewAlertas({patients,onPatient}){
+  const [showInfo, setShowInfo] = useState(false);
+
+  // Modal info App Hora Salud / Telesalud
+  const modalInfo = showInfo && React.createElement('div',{className:'overlay',
+    onClick:e=>{ if(e.target===e.currentTarget) setShowInfo(false); }
+  },
+    React.createElement('div',{className:'sheet'},
+      React.createElement('div',{className:'sheet-handle'}),
+      React.createElement('div',{style:{fontWeight:900,fontSize:17,marginBottom:14}},
+        '📱 Cómo pedir hora para EMPAM'),
+      React.createElement('div',{style:{
+        background:'#D5F5E3',borderRadius:12,padding:'14px 16px',marginBottom:12
+      }},
+        React.createElement('div',{style:{fontWeight:800,fontSize:15,color:'#1E8449',marginBottom:6}},
+          '📲 App Hora Salud'),
+        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.6}},
+          '1. El paciente descarga la app "Hora Salud" en su teléfono',React.createElement('br'),
+          '2. Busca CESFAM Félix de Amesti',React.createElement('br'),
+          '3. Solicita hora para EMPAM / Evaluación Adulto Mayor',React.createElement('br'),
+          React.createElement('strong',null,'Disponible para: '), 'Android e iOS'
+        )
+      ),
+      React.createElement('div',{style:{
+        background:'#D6EAF8',borderRadius:12,padding:'14px 16px',marginBottom:12
+      }},
+        React.createElement('div',{style:{fontWeight:800,fontSize:15,color:'#2471A3',marginBottom:6}},
+          '💻 Telesalud'),
+        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.6}},
+          '1. Llamar directamente al CESFAM',React.createElement('br'),
+          '2. Solicitar teleconsulta o atención presencial para EMPAM',React.createElement('br'),
+          '3. Informar que es usuario del programa MAS AMA'
+        )
+      ),
+      React.createElement('div',{style:{
+        background:'#FEF9E7',borderRadius:12,padding:'12px 14px',fontSize:13,
+        color:'#7A5C00',lineHeight:1.5,marginBottom:14
+      }},
+        '💡 ', React.createElement('strong',null,'Recuerda informar al paciente: '),
+        'el EMPAM debe renovarse antes de su vencimiento. Con 30 días de anticipación es el momento ideal.'
+      ),
+      React.createElement('button',{className:'btn btn-ghost',onClick:()=>setShowInfo(false)},'Cerrar')
+    )
+  );
+
   const [tab,setTab]=useState('empam');
   const vencidos =patients.filter(p=>p.empamEstado?.includes('VENCIDO'));
   const prontos  =patients.filter(p=>p.empamEstado?.includes('PRONTO'));
@@ -1530,7 +1574,12 @@ function ViewAlertas({patients,onPatient}){
               ?React.createElement(EmpamChip,{estado:p.empamEstado})
               :React.createElement(AsistChip,{alerta:p.alertaAsist,presencias:p.totalPresencias,total:p.totalSesiones}),
             type==='empam'&&p.empamFecha&&
-              React.createElement('span',{style:{fontSize:12,color:'#777'}},` Vence: ${formatDate(p.empamFecha)}`)
+              React.createElement('span',{style:{fontSize:12,color:'#777'}},` Vence: ${formatDate(p.empamFecha)}`),
+            type==='empam'&&(p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO'))&&
+              React.createElement('span',{style:{
+                background:'#FFF9E6',color:'#7A5C00',borderRadius:20,
+                padding:'2px 8px',fontSize:11,fontWeight:700
+              }},'📱 Pedir hora')
           )
         ),
         React.createElement('span',{style:{fontSize:20,color:'#ccc'}},'›')
@@ -1539,6 +1588,23 @@ function ViewAlertas({patients,onPatient}){
   }
 
   return React.createElement('div',{className:'page'},
+    modalInfo,
+    // Banner informativo
+    React.createElement('div',{style:{
+      background:'#1A3A5C',borderRadius:12,padding:'12px 14px',marginBottom:12,
+      display:'flex',justifyContent:'space-between',alignItems:'center'
+    }},
+      React.createElement('div',null,
+        React.createElement('div',{style:{color:'#fff',fontWeight:800,fontSize:13}},'⚠️ Alertas Clínicas'),
+        React.createElement('div',{style:{color:'rgba(255,255,255,.7)',fontSize:12}},
+          'Revisa antes de ir al taller')
+      ),
+      React.createElement('button',{
+        onClick:()=>setShowInfo(true),
+        style:{background:'rgba(255,255,255,.15)',color:'#fff',border:'none',
+               borderRadius:10,padding:'8px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}
+      },'📱 Cómo pedir hora')
+    ),
     React.createElement('div',{className:'tabs'},
       [['empam',`🔴 EMPAM (${vencidos.length+prontos.length})`],
        ['asist',`👣 Asistencia (${bajo.length})`],
@@ -2368,66 +2434,128 @@ function ViewRayen({ patients, attendanceLog, toast }) {
 //  MÓDULO RUTINAS DE SESIÓN
 // ═══════════════════════════════════════════════════════════════════════
 
-// ── BIBLIOTECA DE EJERCICIOS MAS AMA ────────────────────────────────
-const EJERCICIOS_FISICOS = [
-  // CALENTAMIENTO
-  { id:'f01', cat:'🔥 Calentamiento', nombre:'Marcha en el lugar', desc:'Levantando rodillas, brazos alternos', min:3, mat:'' },
-  { id:'f02', cat:'🔥 Calentamiento', nombre:'Rotación de hombros', desc:'Circular hacia adelante y atrás, 10 rep cada sentido', min:2, mat:'' },
-  { id:'f03', cat:'🔥 Calentamiento', nombre:'Flexión y extensión de tobillo', desc:'Sentado, punta-talón alternado, 15 rep', min:2, mat:'' },
-  { id:'f04', cat:'🔥 Calentamiento', nombre:'Rotación de cuello', desc:'Suave, media luna de hombro a hombro, 5 rep', min:2, mat:'' },
-  // FUERZA
-  { id:'f05', cat:'💪 Fuerza', nombre:'Sentadilla en silla', desc:'Pararse y sentarse con apoyo de silla, 3×10', min:5, mat:'Silla' },
-  { id:'f06', cat:'💪 Fuerza', nombre:'Press de hombros con banda', desc:'Banda elástica, empuje hacia arriba, 3×12', min:5, mat:'Banda elástica' },
-  { id:'f07', cat:'💪 Fuerza', nombre:'Curl de bíceps con banda', desc:'Flexión de codo con banda, 3×12', min:5, mat:'Banda elástica' },
-  { id:'f08', cat:'💪 Fuerza', nombre:'Extensión de rodilla sentado', desc:'Extender pierna, sostener 3 seg, 3×10 cada lado', min:5, mat:'Silla' },
-  { id:'f09', cat:'💪 Fuerza', nombre:'Elevación de talones de pie', desc:'Apoyo en silla, subir talones, 3×15', min:4, mat:'Silla' },
-  { id:'f10', cat:'💪 Fuerza', nombre:'Abducción de cadera con banda', desc:'De pie, separar pierna lateral, 3×10', min:5, mat:'Banda elástica' },
-  // EQUILIBRIO
-  { id:'f11', cat:'⚖️ Equilibrio', nombre:'Apoyo unipodal', desc:'Un pie, apoyo silla si necesario, 30 seg cada lado', min:3, mat:'Silla' },
-  { id:'f12', cat:'⚖️ Equilibrio', nombre:'Tándem estático', desc:'Un pie delante del otro, 30 seg, ojos abiertos/cerrados', min:3, mat:'' },
-  { id:'f13', cat:'⚖️ Equilibrio', nombre:'Marcha en tándem', desc:'Caminar en línea recta talón-punta, 5 metros ida y vuelta', min:4, mat:'' },
-  { id:'f14', cat:'⚖️ Equilibrio', nombre:'Transferencia de peso lateral', desc:'Desplazar peso de pie a pie, lento y controlado, 10 rep', min:3, mat:'' },
-  { id:'f15', cat:'⚖️ Equilibrio', nombre:'Alcance funcional', desc:'Alcanzar objeto al frente sin mover pies, 10 rep', min:3, mat:'Objeto' },
-  // FLEXIBILIDAD
-  { id:'f16', cat:'🧘 Flexibilidad', nombre:'Estiramiento isquiotibiales', desc:'Sentado, extender pierna, inclinar tronco, 30 seg cada lado', min:3, mat:'Silla' },
-  { id:'f17', cat:'🧘 Flexibilidad', nombre:'Estiramiento de cuádriceps', desc:'De pie con apoyo, talón al glúteo, 30 seg cada lado', min:3, mat:'Silla' },
-  { id:'f18', cat:'🧘 Flexibilidad', nombre:'Rotación de tronco sentado', desc:'Manos en hombros, girar tronco, 10 rep cada lado', min:3, mat:'Silla' },
-  { id:'f19', cat:'🧘 Flexibilidad', nombre:'Estiramiento de pantorrilla', desc:'Un pie atrás, talón al suelo, 30 seg cada lado', min:3, mat:'Pared' },
-  // VUELTA A LA CALMA
-  { id:'f20', cat:'🌿 Vuelta a la calma', nombre:'Respiración diafragmática', desc:'Mano en abdomen, inhalar 4s / exhalar 6s, 5 rep', min:3, mat:'' },
-  { id:'f21', cat:'🌿 Vuelta a la calma', nombre:'Estiramiento cervical', desc:'Inclinar cabeza lateral suave, 30 seg cada lado', min:2, mat:'' },
-  { id:'f22', cat:'🌿 Vuelta a la calma', nombre:'Estiramiento de brazos y espalda', desc:'Entrelazar manos, empujar al frente, 30 seg', min:2, mat:'' },
+// ── TEMÁTICAS CLÍNICAS DEL MANUAL DE BATALLA ──────────────────────────
+const TEMATICAS = [
+  {
+    id: 'rodilla',
+    icon: '🦵',
+    nombre: 'Artrosis de Rodilla',
+    color: '#C00000',
+    objetivo: 'Preservar rango articular, fortalecer cuádriceps y glúteos, mejorar tolerancia funcional al dolor durante la marcha.',
+    pildora: 'La artrosis mejora con movimiento controlado. El dolor leve (hasta 4/10) al ejercitar es aceptable; el dolor agudo es señal de sobrecarga.',
+    doble_tarea: 'Sumar en voz alta de 2 en 2 mientras ejecuta las sentadillas con silla.',
+    ejercicios: [
+      { id:'r01', nombre:'Extensión de rodilla', desc:'Sentado, espalda apoyada. Extender una rodilla a la vez y mantener.', dos:'3 × 6-8 reps + última 10s iso' },
+      { id:'r02', nombre:'Sentadillas con silla', desc:'Pararse y sentarse desde silla firme, sin dejarse caer. Tronco recto.', dos:'3 × 8 reps' },
+      { id:'r03', nombre:'Elevaciones en puntillas', desc:'De pie, apoyo leve en silla. Subir y bajar talones controladamente.', dos:'3 × 15 reps' },
+      { id:'r04', nombre:'Elevaciones laterales', desc:'De pie, apoyo leve. Elevar una pierna al costado controlando subida y bajada.', dos:'3 × 12 c/pierna' },
+      { id:'r05', nombre:'Empuje acelerador', desc:'Sentado con banda en planta del pie. Empujar como acelerador de auto.', dos:'3 × 15 c/pierna' },
+    ],
+  },
+  {
+    id: 'lumbar',
+    icon: '🔙',
+    nombre: 'Lumbalgia / Dolor Lumbar',
+    color: '#7030A0',
+    objetivo: 'Disminuir rigidez lumbar, activar musculatura del core y mejorar la mecánica de carga en actividades del hogar.',
+    pildora: 'El descanso prolongado empeora el dolor lumbar crónico. El movimiento graduado y el fortalecimiento del abdomen y glúteos son el mejor analgésico.',
+    doble_tarea: 'Nombrar frutas por cada letra del abecedario mientras realiza la marcha estática.',
+    ejercicios: [
+      { id:'l01', nombre:'Movilidad de tronco – inclinación', desc:'De pie, pies al ancho de hombros. Elevar un brazo e inclinar al lado contrario.', dos:'3 × 10 c/lado' },
+      { id:'l02', nombre:'Movilidad de tronco – rotación', desc:'De pie, pies al ancho de hombros. Girar el tronco de un lado al otro con control.', dos:'3 × 10 c/lado' },
+      { id:'l03', nombre:'Remo con banda', desc:'Sentado, banda enganchada en los pies. Llevar codos atrás sin elevar hombros.', dos:'3 × 6-8 reps + última 10s iso' },
+      { id:'l04', nombre:'Puente de glúteos en silla', desc:'Sentado al borde de la silla, apretar glúteos y empujar caderas hacia adelante.', dos:'3 × 8 reps' },
+      { id:'l05', nombre:'Marcha estática', desc:'De pie, apoyo en silla. Elevar rodillas alternadamente hasta la altura de la cadera.', dos:'3 × 30 pasos' },
+    ],
+  },
+  {
+    id: 'hombro',
+    icon: '💪',
+    nombre: 'Hombro',
+    color: '#2471A3',
+    objetivo: 'Recuperar y mantener el rango funcional del hombro, con énfasis en rotación externa, flexión y fortalecimiento escapular.',
+    pildora: 'El hombro se rigidiza rápido con la inmovilidad. Movilizar a diario, aunque sea con rangos pequeños, es clave para no perder funcionalidad.',
+    doble_tarea: 'Contar hacia atrás desde 50 de 3 en 3 mientras realiza el ejercicio Terminator.',
+    ejercicios: [
+      { id:'h01', nombre:'Movilidad de hombros', desc:'De pie, codos doblados. Movimiento circular hacia atrás y luego adelante.', dos:'3 × 10 c/dirección' },
+      { id:'h02', nombre:'Terminator', desc:'De pie, banda o botellas. Codos estirados a altura de hombros. Abrir brazos y cerrar.', dos:'3 × 6-8 reps + última 10s iso' },
+      { id:'h03', nombre:'Empuje', desc:'De pie, manos a la altura del pecho. Extender los brazos al frente con la banda.', dos:'3 × 8 reps' },
+      { id:'h04', nombre:'Popeye', desc:'De pie, codos pegados a las costillas. Llevar banda o botellas al pecho.', dos:'3 × 8 reps' },
+      { id:'h05', nombre:'Martillo', desc:'De pie, codos doblados pegados al cuerpo. Extender brazos al costado sin despegar codos.', dos:'3 × 10 reps' },
+      { id:'h06', nombre:'Bisagra', desc:'De pie, codos en 90° pegados al tronco. Abrir solo los antebrazos hacia afuera.', dos:'3 × 10 reps' },
+    ],
+  },
+  {
+    id: 'equilibrio',
+    icon: '⚖️',
+    nombre: 'Equilibrio / Prevención Caídas',
+    color: '#375623',
+    objetivo: 'Mejorar equilibrio estático y dinámico, reacción ante desestabilizaciones y confianza en la marcha para prevenir caídas.',
+    pildora: '1 de cada 3 adultos mayores sufre una caída al año. El equilibrio se entrena con sobrecarga progresiva de desafío, no de peso. Menos apoyo = más estímulo.',
+    doble_tarea: 'Mencionar nombres de ciudades de Chile mientras realiza el apoyo unipodal.',
+    ejercicios: [
+      { id:'e01', nombre:'Marcha estática', desc:'De pie con apoyo leve. Elevar rodillas alternadamente a la altura de la cadera.', dos:'3 × 30 pasos' },
+      { id:'e02', nombre:'Elevaciones en puntillas', desc:'De pie con apoyo leve. Subir y bajar talones de forma controlada.', dos:'3 × 15 reps' },
+      { id:'e03', nombre:'Apoyo unipodal', desc:'Un pie, apoyo silla si necesario. 30 seg cada lado.', dos:'3 × 30 seg c/lado' },
+      { id:'e04', nombre:'Tándem estático', desc:'Un pie delante del otro. 30 seg ojos abiertos/cerrados.', dos:'3 × 30 seg' },
+      { id:'e05', nombre:'Marcha en tándem', desc:'Caminar en línea recta talón-punta, 5 metros ida y vuelta.', dos:'3 × 5 metros' },
+      { id:'e06', nombre:'Salto de estrella', desc:'De pie, piernas separadas. Pequeños saltos abriendo y cerrando piernas y brazos.', dos:'3 × 15 saltos (opcional)' },
+    ],
+  },
+  {
+    id: 'movilidad',
+    icon: '🤸',
+    nombre: 'Movilidad General',
+    color: '#E67E22',
+    objetivo: 'Mantener y mejorar el rango articular global, reducir la rigidez matinal y preparar el cuerpo para la actividad del día.',
+    pildora: 'La flexibilidad disminuye con la edad, pero se conserva con práctica diaria. 10 minutos de movilidad al despertar pueden cambiar radicalmente la calidad del día.',
+    doble_tarea: 'Respirar consciente 4 seg inhalar · 4 seg exhalar durante todo el bloque de movilidad.',
+    ejercicios: [
+      { id:'m01', nombre:'Movilidad cabeza – rotación', desc:"De pie, girar la cabeza a derecha e izquierda como diciendo 'NO'.", dos:'2 × 10 reps' },
+      { id:'m02', nombre:'Movilidad cabeza – inclinación', desc:'De pie, llevar oreja al hombro sin elevar el hombro ni mover el tronco.', dos:'2 × 10 reps' },
+      { id:'m03', nombre:'Movilidad de hombros', desc:'De pie, codos doblados. Círculos hacia atrás y luego hacia adelante.', dos:'2 × 10 c/dir' },
+      { id:'m04', nombre:'Movilidad de cadera', desc:'De pie, manos en cintura. Círculos de cadera a la derecha y luego a la izquierda.', dos:'2 × 10 c/dir' },
+      { id:'m05', nombre:'Flexión cadera-rodilla', desc:'De pie, elevar una rodilla hasta la altura de la cadera alternando piernas.', dos:'2 × 10 c/pierna' },
+      { id:'m06', nombre:'Movilidad tobillo-pie', desc:'De pie, levantar talón de un pie y luego el contrario alternadamente.', dos:'2 × 10 c/pie' },
+    ],
+  },
+  {
+    id: 'complementario',
+    icon: '🏋️',
+    nombre: 'Complementario',
+    color: '#1A3A5C',
+    objetivo: 'Complementar la rutina base con ejercicios adicionales de fuerza, activación glútea y estabilidad para diversificar el estímulo.',
+    pildora: 'Cambiar los ejercicios cada 4-6 semanas evita la meseta neuromuscular. El cuerpo se adapta rápido: si siempre haces lo mismo, deja de progresar.',
+    doble_tarea: 'Progresión semanal: agregar 1-2 repeticiones por serie cada semana hasta completar 3 × 12, luego aumentar resistencia de la banda.',
+    ejercicios: [
+      { id:'c01', nombre:'Puente de glúteos en silla', desc:'Sentado al borde de la silla. Apretar glúteos y empujar cadera hacia el frente.', dos:'3 × 8 reps' },
+      { id:'c02', nombre:'Abducción de cadera sentado', desc:'Sentado con banda rodeando las rodillas. Separar piernas contra la resistencia.', dos:'3 × 12 reps' },
+      { id:'c03', nombre:'Press de pecho con banda', desc:'De pie, banda por la espalda. Empujar al frente extendiendo ambos brazos.', dos:'3 × 6-8 reps + última 10s iso' },
+      { id:'c04', nombre:'Pull-down con banda', desc:'Banda sobre la cabeza con ambas manos. Tirar hacia abajo abriendo los brazos.', dos:'3 × 10 reps' },
+      { id:'c05', nombre:'Marcha lateral con banda', desc:'Banda en los tobillos. Dar pasos laterales manteniendo tensión en la banda.', dos:'3 × 10 pasos' },
+      { id:'c06', nombre:'Caminata en tándem', desc:'Caminar colocando un pie justo delante del otro, punta contra talón.', dos:'3 × 15 pasos' },
+    ],
+  },
+  {
+    id: 'cognitivo',
+    icon: '🧠',
+    nombre: 'Sesión Cognitiva',
+    color: '#7D3C98',
+    objetivo: 'Estimular memoria de trabajo, atención sostenida, velocidad de procesamiento y fluencia verbal a través de tareas cognitivas estructuradas.',
+    pildora: 'El cerebro mantiene plasticidad a toda edad. Tareas nuevas generan nuevas conexiones neuronales. La clave es el desafío, no la dificultad extrema.',
+    doble_tarea: 'Integra estas tareas como doble tarea durante los ejercicios físicos de baja demanda para potenciar la transferencia funcional.',
+    ejercicios: [
+      { id:'cog01', nombre:'Conteo regresivo 7 en 7', desc:'Contar en voz alta desde 100 restando 7 cada vez (100, 93, 86, 79...).', dos:'3 × 1 min' },
+      { id:'cog02', nombre:'Fluencia verbal por letra', desc:"Nombrar todos los animales que se le ocurran con una letra dada (ej: 'A' → águila, avestruz...).", dos:'2 × 2 min' },
+      { id:'cog03', nombre:'Memoria de 5 objetos', desc:'Mostrar 5 objetos por 30 segundos, ocultarlos y pedir que los recuerde en orden.', dos:'3 intentos' },
+      { id:'cog04', nombre:'Meses del año al revés', desc:'Recitar los meses de diciembre a enero sin ayuda. Luego los días de la semana.', dos:'3 vueltas' },
+      { id:'cog05', nombre:'Cálculo mental simple', desc:'Dictar operaciones cortas en serie (5+3, 12-4, 6×2...) para responder en voz alta.', dos:'2 × 1 min' },
+      { id:'cog06', nombre:'Asociaciones cruzadas', desc:"Completar frases tipo 'Si el sol fuera un animal sería...' con respuestas creativas.", dos:'2 × 5 ítems' },
+    ],
+  },
 ];
 
-const EJERCICIOS_COGNITIVOS = [
-  // MEMORIA
-  { id:'c01', cat:'🧠 Memoria', nombre:'Secuencia de palabras', desc:'Leer 5 palabras, esperar 2 min, recordar. Aumentar dificultad', min:5, mat:'Cuaderno' },
-  { id:'c02', cat:'🧠 Memoria', nombre:'Historia con detalles', desc:'Contar historia breve, preguntar detalles específicos', min:7, mat:'' },
-  { id:'c03', cat:'🧠 Memoria', nombre:'Recuerdo de lista de compras', desc:'Memorizar 8 productos, distractores, recordar', min:5, mat:'Cuaderno' },
-  { id:'c04', cat:'🧠 Memoria', nombre:'Memoria episódica', desc:'¿Qué hicieron el fin de semana? Detalles: lugar, personas, hora', min:5, mat:'' },
-  // ATENCIÓN
-  { id:'c05', cat:'🎯 Atención', nombre:'Búsqueda de letras', desc:'Tachar letra específica en texto, contar errores y tiempo', min:5, mat:'Hoja, lápiz' },
-  { id:'c06', cat:'🎯 Atención', nombre:'Secuencia numérica', desc:'Contar de 3 en 3 desde 1 hasta 30, luego al revés', min:4, mat:'' },
-  { id:'c07', cat:'🎯 Atención', nombre:'Cancelación de símbolos', desc:'Marcar símbolo específico entre varios, contra el tiempo', min:5, mat:'Hoja preparada' },
-  { id:'c08', cat:'🎯 Atención', nombre:'Dígitos directo e inverso', desc:'Repetir secuencia de números, luego en orden inverso', min:4, mat:'' },
-  // LENGUAJE
-  { id:'c09', cat:'💬 Lenguaje', nombre:'Fluidez verbal semántica', desc:'Nombrar animales en 1 minuto. Normal: >12 palabras', min:3, mat:'Cronómetro' },
-  { id:'c10', cat:'💬 Lenguaje', nombre:'Denominación de objetos', desc:'Mostrar imágenes, nombrar correctamente', min:5, mat:'Imágenes' },
-  { id:'c11', cat:'💬 Lenguaje', nombre:'Completar refranes', desc:'Iniciar refrán conocido, completar. Ej: "No por mucho madrugar..."', min:5, mat:'' },
-  { id:'c12', cat:'💬 Lenguaje', nombre:'Categorías y ejemplos', desc:'Decir 3 frutas, 3 países, 3 animales marinos, etc.', min:5, mat:'' },
-  // FUNCIONES EJECUTIVAS
-  { id:'c13', cat:'⚙️ Funciones Ejecutivas', nombre:'Stroop color-palabra', desc:'Leer color de tinta (no la palabra). Versión básica adaptada', min:5, mat:'Hoja preparada' },
-  { id:'c14', cat:'⚙️ Funciones Ejecutivas', nombre:'Torre de bloques', desc:'Construir torre siguiendo modelo de 5 pasos', min:7, mat:'Bloques o fichas' },
-  { id:'c15', cat:'⚙️ Funciones Ejecutivas', nombre:'Planificación de actividad', desc:'Organizar pasos para hacer un sándwich/ir al banco', min:5, mat:'' },
-  // HABILIDADES VISOESPACIALES
-  { id:'c16', cat:'🗺️ Visoespacial', nombre:'Copia de figura', desc:'Copiar figura geométrica compleja, evaluar planificación', min:5, mat:'Hoja, lápiz' },
-  { id:'c17', cat:'🗺️ Visoespacial', nombre:'Reloj', desc:'Dibujar reloj marcando una hora específica (ej: 11:10)', min:5, mat:'Hoja, lápiz' },
-  { id:'c18', cat:'🗺️ Visoespacial', nombre:'Rompecabezas verbal', desc:'Describir objeto, adivinar cuál es (adivinanzas)', min:5, mat:'' },
-  // CÁLCULO
-  { id:'c19', cat:'🔢 Cálculo', nombre:'Operaciones simples', desc:'Sumas y restas de 2 cifras, adaptado al nivel del grupo', min:5, mat:'Cuaderno' },
-  { id:'c20', cat:'🔢 Cálculo', nombre:'Problemas cotidianos', desc:'¿Cuánto vueldo de $1000 si compro X? Situaciones reales', min:5, mat:'' },
-];
-
+// ── RUTINA SUGERIDA POR DEFECTO ──────────────────────────────────────────
 // ── RUTINA SUGERIDA POR DEFECTO ──────────────────────────────────────
 const RUTINA_SUGERIDA_FISICA = ['f01','f05','f11','f06','f16','f20'];
 const RUTINA_SUGERIDA_COG    = ['c01','c09','c05'];
@@ -2513,302 +2641,302 @@ function SesionHistorialCard({ sesion, onPress }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  VIEW: RUTINAS
+//  VIEW: RUTINAS (Registro por Taller - Uso Personal)
 // ═══════════════════════════════════════════════════════════════════════
 function ViewRutinas({ sessionLog, setSessionLog, toast }) {
-  const [tab, setTab]           = useState('hoy');
-  const [selTaller, setTaller]  = useState('');
-  const [selFecha, setFecha]    = useState(todayISO());
-  const [step, setStep]         = useState('taller'); // taller→tipo→seleccion→notas
-  const [tipo, setTipo]         = useState('fisico'); // fisico|cognitivo
-  const [selFis, setSelFis]     = useState([]);
-  const [selCog, setSelCog]     = useState([]);
-  const [notas, setNotas]       = useState('');
-  const [filterCat, setFilter]  = useState('');
+  const [tab, setTab]          = useState('registrar');
+  const [selTaller, setTaller] = useState('');
+  const [selFecha, setFecha]   = useState(todayISO());
+  const [selTematica, setTema] = useState(null);
+  const [notas, setNotas]      = useState('');
   const [detailSesion, setDetail] = useState(null);
 
-  const currentKey = sessionKey(selTaller, selFecha);
+  const currentKey = selTaller && selFecha ? `sesion||${selTaller}||${selFecha}` : null;
 
-  // Load existing session if any
+  // Cargar sesión existente si hay
   useEffect(() => {
-    if (selTaller && selFecha) {
-      const existing = (sessionLog || {})[currentKey];
-      if (existing) {
-        setSelFis(existing.fisicos || []);
-        setSelCog(existing.cognitivos || []);
-        setNotas(existing.notas || '');
-      } else {
-        setSelFis([]); setSelCog([]); setNotas('');
-      }
+    if (currentKey && sessionLog?.[currentKey]) {
+      const ex = sessionLog[currentKey];
+      setTema(TEMATICAS.find(t => t.id === ex.tematicaId) || null);
+      setNotas(ex.notas || '');
+    } else {
+      setTema(null); setNotas('');
     }
   }, [selTaller, selFecha]);
 
-  // All sessions sorted by date desc
-  const allSessions = Object.values(sessionLog || {})
-    .filter(s => !selTaller || s.taller === selTaller)
-    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  // Historial ordenado
+  const historial = Object.values(sessionLog || {})
+    .filter(s => s.tematicaId)
+    .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
-  // Last session for this taller (for reference)
-  const lastSession = Object.values(sessionLog || {})
-    .filter(s => s.taller === selTaller && s.fecha < selFecha)
-    .sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+  // ¿Qué temática usó cada taller la última vez?
+  const ultimaTemPorTaller = {};
+  historial.forEach(s => {
+    if (!ultimaTemPorTaller[s.taller]) ultimaTemPorTaller[s.taller] = s.tematicaId;
+  });
 
-  function toggleFis(id) {
-    setSelFis(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  }
-  function toggleCog(id) {
-    setSelCog(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  }
-
-  function usarSugerida() {
-    setSelFis(RUTINA_SUGERIDA_FISICA);
-    setSelCog(RUTINA_SUGERIDA_COG);
-    toast('✅ Rutina sugerida cargada');
-  }
-
-  function usarAnterior() {
-    if (!lastSession) return;
-    setSelFis(lastSession.fisicos || []);
-    setSelCog(lastSession.cognitivos || []);
-    toast('✅ Rutina anterior cargada');
+  // ¿Cuántas veces usó cada temática este taller?
+  function usosPorTaller(tallerId) {
+    return historial
+      .filter(s => s.taller === tallerId)
+      .map(s => s.tematicaId);
   }
 
   function guardar() {
-    if (!selTaller || !selFecha) { toast('❌ Selecciona taller y fecha'); return; }
-    if (selFis.length === 0 && selCog.length === 0) { toast('❌ Selecciona al menos un ejercicio'); return; }
-    const next = { ...(sessionLog || {}), [currentKey]: {
+    if (!selTaller || !selFecha || !selTematica) {
+      toast('❌ Selecciona taller, fecha y temática'); return;
+    }
+    const next = { ...(sessionLog||{}), [currentKey]: {
       taller: selTaller, fecha: selFecha,
-      fisicos: selFis, cognitivos: selCog, notas,
-      savedAt: new Date().toISOString()
+      tematicaId: selTematica.id,
+      tematicaNombre: selTematica.nombre,
+      notas, savedAt: new Date().toISOString()
     }};
     setSessionLog(next); DB.set('sessionLog', next);
-    toast(`💾 Sesión guardada — ${selFis.length} físicos, ${selCog.length} cognitivos`);
-    setStep('taller');
+    toast(`💾 Sesión guardada — ${selTematica.icon} ${selTematica.nombre}`);
+    setTab('historial');
   }
 
-  // Duration calc
-  const durFis = selFis.reduce((s, id) => {
-    const e = EJERCICIOS_FISICOS.find(x => x.id === id);
-    return s + (e?.min || 0);
-  }, 0);
-  const durCog = selCog.reduce((s, id) => {
-    const e = EJERCICIOS_COGNITIVOS.find(x => x.id === id);
-    return s + (e?.min || 0);
-  }, 0);
+  // ── TAB: REGISTRAR ───────────────────────────────────────────────────
+  const tabRegistrar = React.createElement('div', null,
 
-  // Categories
-  const catsFis = [...new Set(EJERCICIOS_FISICOS.map(e => e.cat))];
-  const catsCog = [...new Set(EJERCICIOS_COGNITIVOS.map(e => e.cat))];
-
-  const listaFis = filterCat
-    ? EJERCICIOS_FISICOS.filter(e => e.cat === filterCat)
-    : EJERCICIOS_FISICOS;
-  const listaCog = filterCat
-    ? EJERCICIOS_COGNITIVOS.filter(e => e.cat === filterCat)
-    : EJERCICIOS_COGNITIVOS;
-
-  // ── STEP: TALLER SELECTOR ──────────────────────────────────────────
-  if (step === 'taller') return React.createElement('div', { className: 'page' },
-    React.createElement('div', { className: 'tabs' },
-      [['hoy','📝 Registrar Sesión'],['historial','📚 Historial']].map(([v,l]) =>
-        React.createElement('div', { key: v, className: `tab ${tab===v?'active':''}`,
-          onClick: () => setTab(v) }, l)
-      )
-    ),
-
-    tab === 'hoy' && React.createElement('div', null,
-      React.createElement('div', { className: 'card' },
-        React.createElement('div', { className: 'card-title' }, 'Nueva sesión'),
-        React.createElement(Field, { label: 'Taller' },
-          React.createElement('select', { value: selTaller, onChange: e => setTaller(e.target.value) },
-            React.createElement('option', { value: '' }, '— Selecciona el taller —'),
-            TALLERES.map(t => React.createElement('option', { key: t, value: t }, t))
-          )
-        ),
-        React.createElement(Field, { label: 'Fecha' },
-          React.createElement('input', { type: 'date', value: selFecha,
-            onChange: e => setFecha(e.target.value) })
-        ),
-
-        // Last session preview
-        lastSession && selTaller && React.createElement('div', {
-          style: { background: '#F0FAF0', borderRadius: 10, padding: 12, marginBottom: 12 }
-        },
-          React.createElement('div', { style: { fontSize: 12, fontWeight: 800, color: '#375623', marginBottom: 6 } },
-            `📅 Sesión anterior: ${formatDate(lastSession.fecha)}`),
-          React.createElement('div', { style: { display: 'flex', gap: 8 } },
-            React.createElement('span', { style: { fontSize: 12, color: '#555' } },
-              `💪 ${lastSession.fisicos?.length || 0} físicos · 🧠 ${lastSession.cognitivos?.length || 0} cognitivos`),
-          ),
-          React.createElement('button', {
-            onClick: usarAnterior,
-            style: { marginTop: 8, background: '#375623', color: '#fff', border: 'none',
-                     borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 700,
-                     cursor: 'pointer', width: '100%' }
-          }, '🔄 Usar misma rutina anterior')
-        ),
-
-        React.createElement('div', { className: 'btn-row' },
-          React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 },
-            onClick: usarSugerida }, '⭐ Rutina sugerida'),
-          React.createElement('button', { className: 'btn btn-primary', style: { flex: 2 },
-            disabled: !selTaller || !selFecha,
-            onClick: () => setStep('seleccion') }, 'Seleccionar ejercicios →')
-        )
-      )
-    ),
-
-    tab === 'historial' && React.createElement('div', null,
-      React.createElement(Field, { label: 'Filtrar por taller' },
-        React.createElement('select', { value: selTaller, onChange: e => setTaller(e.target.value) },
-          React.createElement('option', { value: '' }, 'Todos los talleres'),
-          TALLERES.map(t => React.createElement('option', { key: t, value: t }, t))
+    // Selector taller + fecha
+    React.createElement('div', { className:'card' },
+      React.createElement('div', { className:'card-title' }, '📅 Sesión nueva'),
+      React.createElement(Field, { label:'Taller / Club' },
+        React.createElement('select', { value:selTaller, onChange:e=>setTaller(e.target.value) },
+          React.createElement('option', { value:'' }, '— Selecciona el taller —'),
+          TALLERES.map(t => React.createElement('option', { key:t, value:t }, t))
         )
       ),
-      allSessions.length === 0
-        ? React.createElement('div', { className: 'empty-state' },
-            React.createElement('div', { className: 'emoji' }, '📚'),
-            React.createElement('p', null, 'No hay sesiones registradas aún'))
-        : allSessions.map((s, i) =>
-            React.createElement(SesionHistorialCard, {
-              key: i, sesion: s,
-              onPress: () => setDetail(s)
-            })
-          ),
-
-      // Detail modal
-      detailSesion && React.createElement('div', { className: 'overlay',
-        onClick: e => { if(e.target===e.currentTarget) setDetail(null); }
+      React.createElement(Field, { label:'Fecha' },
+        React.createElement('input', { type:'date', value:selFecha,
+          onChange:e=>setFecha(e.target.value) })
+      ),
+      // Aviso de última temática usada en este taller
+      selTaller && ultimaTemPorTaller[selTaller] && React.createElement('div', {
+        style:{ background:'#FFF9E6', borderRadius:10, padding:'8px 12px',
+                fontSize:13, color:'#7A5C00', lineHeight:1.5 }
       },
-        React.createElement('div', { className: 'sheet' },
-          React.createElement('div', { className: 'sheet-handle' }),
-          React.createElement('div', { style: { fontWeight: 900, fontSize: 17, marginBottom: 2 } },
-            `Sesión — ${formatDate(detailSesion.fecha)}`),
-          React.createElement('div', { style: { fontSize: 13, color: '#777', marginBottom: 14 } },
-            detailSesion.taller),
-
-          detailSesion.fisicos?.length > 0 && React.createElement('div', null,
-            React.createElement(SectionHdr, null, `💪 Ejercicios Físicos (${detailSesion.fisicos.length})`),
-            detailSesion.fisicos.map(id => {
-              const e = EJERCICIOS_FISICOS.find(x => x.id === id);
-              return e ? React.createElement('div', { key: id,
-                style: { padding: '8px 0', borderBottom: '1px solid #f0f0f0', fontSize: 13 }
-              },
-                React.createElement('div', { style: { fontWeight: 700 } }, e.nombre),
-                React.createElement('div', { style: { fontSize: 12, color: '#888' } }, e.desc)
-              ) : null;
-            })
-          ),
-
-          detailSesion.cognitivos?.length > 0 && React.createElement('div', null,
-            React.createElement(SectionHdr, null, `🧠 Ejercicios Cognitivos (${detailSesion.cognitivos.length})`),
-            detailSesion.cognitivos.map(id => {
-              const e = EJERCICIOS_COGNITIVOS.find(x => x.id === id);
-              return e ? React.createElement('div', { key: id,
-                style: { padding: '8px 0', borderBottom: '1px solid #f0f0f0', fontSize: 13 }
-              },
-                React.createElement('div', { style: { fontWeight: 700 } }, e.nombre),
-                React.createElement('div', { style: { fontSize: 12, color: '#888' } }, e.desc)
-              ) : null;
-            })
-          ),
-
-          detailSesion.notas && React.createElement('div', null,
-            React.createElement(SectionHdr, null, '📝 Notas'),
-            React.createElement('div', { style: { fontSize: 13, color: '#555', lineHeight: 1.6 } },
-              detailSesion.notas)
-          ),
-
-          React.createElement('button', { className: 'btn btn-ghost', style: { marginTop: 14 },
-            onClick: () => setDetail(null) }, 'Cerrar')
-        )
-      )
-    )
-  );
-
-  // ── STEP: SELECCIÓN DE EJERCICIOS ──────────────────────────────────
-  return React.createElement('div', { className: 'page' },
-    // Header con resumen
-    React.createElement('div', { style: {
-      background: '#1F3864', borderRadius: 12, padding: '12px 14px', marginBottom: 12
-    } },
-      React.createElement('div', { style: { color: 'rgba(255,255,255,.7)', fontSize: 12, marginBottom: 2 } },
-        `${selTaller} · ${formatDate(selFecha)}`),
-      React.createElement('div', { style: { display: 'flex', gap: 12 } },
-        React.createElement('span', { style: { color: '#fff', fontSize: 14, fontWeight: 700 } },
-          `💪 ${selFis.length} físicos (${durFis} min)`),
-        React.createElement('span', { style: { color: '#fff', fontSize: 14, fontWeight: 700 } },
-          `🧠 ${selCog.length} cognitivos (${durCog} min)`),
-      ),
-      React.createElement('div', { style: { color: 'rgba(255,255,255,.6)', fontSize: 12, marginTop: 4 } },
-        `Duración total estimada: ~${durFis + durCog} minutos`)
-    ),
-
-    // Tipo tabs
-    React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 12 } },
-      React.createElement('button', {
-        className: `btn btn-sm ${tipo === 'fisico' ? 'btn-primary' : 'btn-ghost'}`,
-        style: { flex: 1 }, onClick: () => { setTipo('fisico'); setFilter(''); }
-      }, `💪 Físico (${selFis.length})`),
-      React.createElement('button', {
-        className: `btn btn-sm ${tipo === 'cognitivo' ? 'btn-purple' : 'btn-ghost'}`,
-        style: { flex: 1 }, onClick: () => { setTipo('cognitivo'); setFilter(''); }
-      }, `🧠 Cognitivo (${selCog.length})`)
-    ),
-
-    // Categorías filter
-    React.createElement('div', { style: { display: 'flex', gap: 6, overflowX: 'auto',
-      scrollbarWidth: 'none', marginBottom: 10, paddingBottom: 2 } },
-      React.createElement('div', {
-        onClick: () => setFilter(''),
-        style: { flexShrink: 0, padding: '6px 12px', borderRadius: 20, fontSize: 12,
-                 fontWeight: 700, cursor: 'pointer',
-                 background: !filterCat ? '#2E75B6' : '#fff',
-                 color: !filterCat ? '#fff' : '#777',
-                 border: '1.5px solid #E0E0E0' }
-      }, 'Todos'),
-      (tipo === 'fisico' ? catsFis : catsCog).map(cat =>
-        React.createElement('div', { key: cat,
-          onClick: () => setFilter(cat === filterCat ? '' : cat),
-          style: { flexShrink: 0, padding: '6px 12px', borderRadius: 20, fontSize: 12,
-                   fontWeight: 700, cursor: 'pointer',
-                   background: filterCat === cat ? '#2E75B6' : '#fff',
-                   color: filterCat === cat ? '#fff' : '#777',
-                   border: '1.5px solid #E0E0E0' }
-        }, cat)
+        `⚠️ Última temática en este taller: `,
+        React.createElement('strong', null,
+          TEMATICAS.find(t=>t.id===ultimaTemPorTaller[selTaller])?.nombre || '—')
       )
     ),
 
-    // Exercise list
-    (tipo === 'fisico' ? listaFis : listaCog).map(ej =>
-      React.createElement(EjercicioCard, {
-        key: ej.id, ej,
-        selected: tipo === 'fisico' ? selFis.includes(ej.id) : selCog.includes(ej.id),
-        onToggle: tipo === 'fisico' ? toggleFis : toggleCog
+    // Selector temática
+    selTaller && React.createElement('div', { className:'card' },
+      React.createElement('div', { className:'card-title' }, '📋 Selecciona la temática de hoy'),
+      React.createElement('p', { style:{ fontSize:13, color:'#777', marginBottom:12, lineHeight:1.5 } },
+        'El historial muestra cuántas veces usaste cada temática en este taller.'),
+
+      TEMATICAS.map(t => {
+        const usos = usosPorTaller(selTaller).filter(id => id===t.id).length;
+        const esUltima = ultimaTemPorTaller[selTaller] === t.id;
+        const seleccionada = selTematica?.id === t.id;
+        return React.createElement('div', {
+          key: t.id,
+          onClick: () => setTema(t),
+          style:{
+            display:'flex', alignItems:'center', gap:12,
+            padding:'12px 14px', marginBottom:8, borderRadius:12,
+            border:`2px solid ${seleccionada ? t.color : esUltima ? '#FFD966' : '#E0E0E0'}`,
+            background: seleccionada ? t.color+'15' : esUltima ? '#FFF9E6' : '#fff',
+            cursor:'pointer', transition:'all .15s',
+          }
+        },
+          React.createElement('div', { style:{
+            fontSize:28, width:44, textAlign:'center', flexShrink:0
+          } }, t.icon),
+          React.createElement('div', { style:{ flex:1 } },
+            React.createElement('div', { style:{
+              fontWeight:800, fontSize:14,
+              color: seleccionada ? t.color : '#222'
+            } }, t.nombre),
+            React.createElement('div', { style:{ fontSize:12, color:'#888', marginTop:2 } },
+              t.objetivo.slice(0,60)+'...')
+          ),
+          React.createElement('div', { style:{ textAlign:'right', flexShrink:0 } },
+            React.createElement('div', { style:{
+              fontWeight:800, fontSize:16,
+              color: usos === 0 ? '#375623' : usos >= 3 ? '#C00000' : '#ED7D31'
+            } }, usos),
+            React.createElement('div', { style:{ fontSize:10, color:'#888' } }, 'veces'),
+            esUltima && React.createElement('div', { style:{
+              fontSize:10, color:'#7A5C00', fontWeight:700, marginTop:2
+            } }, '⚠️ última')
+          )
+        );
       })
     ),
 
-    // Notes
-    React.createElement(SectionHdr, null, '📝 Notas de sesión (opcional)'),
-    React.createElement('textarea', {
-      value: notas, onChange: e => setNotas(e.target.value),
-      placeholder: 'Observaciones generales del grupo, incidentes, logros destacados...',
-      style: { width: '100%', minHeight: 80, padding: 12, border: '1.5px solid #E0E0E0',
-               borderRadius: 12, fontSize: 14, resize: 'none', marginBottom: 14, outline: 'none' }
-    }),
+    // Preview temática seleccionada
+    selTematica && React.createElement('div', { style:{
+      background: selTematica.color+'15',
+      border:`2px solid ${selTematica.color}`,
+      borderRadius:14, padding:'14px 16px', marginBottom:12
+    } },
+      React.createElement('div', { style:{ fontWeight:900, fontSize:16,
+        color:selTematica.color, marginBottom:8 } },
+        `${selTematica.icon} ${selTematica.nombre}`),
+      React.createElement('div', { style:{ fontSize:13, color:'#555',
+        marginBottom:10, lineHeight:1.5 } }, selTematica.objetivo),
 
-    // Actions
-    React.createElement('div', { className: 'btn-row' },
-      React.createElement('button', { className: 'btn btn-ghost', style: { flex: 1 },
-        onClick: () => setStep('taller') }, '← Volver'),
-      React.createElement('button', { className: 'btn btn-green', style: { flex: 2 },
-        onClick: guardar,
-        disabled: selFis.length === 0 && selCog.length === 0 },
-        '💾 Guardar Sesión')
-    )
+      // Píldora educativa
+      React.createElement('div', { style:{
+        background:'#fff', borderRadius:10, padding:'8px 12px',
+        marginBottom:10, fontSize:12, color:'#555', lineHeight:1.5
+      } },
+        React.createElement('span', { style:{ fontWeight:800, color:'#E67E22' } }, '💊 Píldora: '),
+        selTematica.pildora
+      ),
+
+      // Ejercicios
+      React.createElement('div', { style:{ marginBottom:8 } },
+        React.createElement('div', { style:{ fontWeight:800, fontSize:13,
+          color:selTematica.color, marginBottom:6 } }, '💪 Ejercicios:'),
+        selTematica.ejercicios.map(ej => React.createElement('div', { key:ej.id,
+          style:{ padding:'6px 0', borderBottom:'1px solid rgba(0,0,0,.05)',
+                  fontSize:13 }
+        },
+          React.createElement('div', { style:{ fontWeight:700 } }, ej.nombre),
+          React.createElement('div', { style:{ fontSize:12, color:'#888',
+            display:'flex', justifyContent:'space-between', marginTop:2 } },
+            React.createElement('span', null, ej.desc.slice(0,50)+'...'),
+            React.createElement('span', { style:{ color:selTematica.color,
+              fontWeight:700, flexShrink:0, marginLeft:8 } }, ej.dos)
+          )
+        ))
+      ),
+
+      // Doble tarea
+      React.createElement('div', { style:{
+        background:'#7D3C98'+'20', borderRadius:10, padding:'8px 12px', fontSize:13
+      } },
+        React.createElement('span', { style:{ fontWeight:800, color:'#7D3C98' } }, '🧠 Doble tarea: '),
+        selTematica.doble_tarea
+      )
+    ),
+
+    // Notas
+    selTematica && React.createElement(Field, { label:'📝 Notas de sesión (opcional)' },
+      React.createElement('textarea', {
+        value:notas, onChange:e=>setNotas(e.target.value),
+        placeholder:'Observaciones del grupo, dificultades, logros...',
+        style:{ minHeight:70, resize:'none' }
+      })
+    ),
+
+    // Guardar
+    selTematica && selTaller && React.createElement('button', {
+      className:'btn btn-green', onClick:guardar
+    }, `💾 Registrar — ${selTematica.icon} ${selTematica.nombre}`)
+  );
+
+  // ── TAB: HISTORIAL ───────────────────────────────────────────────────
+  const tabHistorial = React.createElement('div', null,
+    // Resumen por taller
+    React.createElement('div', { className:'card' },
+      React.createElement('div', { className:'card-title' }, '📊 Última temática por taller'),
+      TALLERES.filter(t => ultimaTemPorTaller[t]).map(t => {
+        const tem = TEMATICAS.find(x => x.id===ultimaTemPorTaller[t]);
+        if (!tem) return null;
+        return React.createElement('div', { key:t, style:{
+          display:'flex', justifyContent:'space-between', alignItems:'center',
+          padding:'8px 0', borderBottom:'1px solid #f0f0f0', fontSize:13
+        } },
+          React.createElement('span', { style:{ color:'#555' } }, t),
+          React.createElement('span', { style:{
+            background:tem.color+'20', color:tem.color,
+            borderRadius:20, padding:'3px 10px', fontSize:12, fontWeight:700
+          } }, `${tem.icon} ${tem.nombre}`)
+        );
+      })
+    ),
+
+    // Lista historial
+    historial.length === 0
+      ? React.createElement('div', { className:'empty-state' },
+          React.createElement('div', { className:'emoji' }, '📚'),
+          React.createElement('p', null, 'No hay sesiones registradas aún'))
+      : historial.map((s,i) => {
+          const tem = TEMATICAS.find(t => t.id===s.tematicaId);
+          return React.createElement('div', { key:i,
+            style:{
+              background:'#fff', borderRadius:12, padding:'12px 14px',
+              marginBottom:8, boxShadow:'0 2px 8px rgba(0,0,0,.06)',
+              borderLeft:`4px solid ${tem?.color||'#ccc'}`,
+              cursor:'pointer'
+            },
+            onClick:()=>setDetail(s)
+          },
+            React.createElement('div', { style:{
+              display:'flex', justifyContent:'space-between', marginBottom:4
+            } },
+              React.createElement('div', { style:{ fontWeight:800, fontSize:14 } },
+                `${tem?.icon||''} ${tem?.nombre||s.tematicaNombre}`),
+              React.createElement('div', { style:{ fontSize:12, color:'#888' } },
+                formatDate(s.fecha))
+            ),
+            React.createElement('div', { style:{ fontSize:12, color:'#777' } }, s.taller),
+            s.notas && React.createElement('div', { style:{
+              fontSize:12, color:'#555', marginTop:4, fontStyle:'italic'
+            } }, `"${s.notas.slice(0,60)}${s.notas.length>60?'...':''}"`
+            )
+          );
+        }),
+
+    // Detail modal
+    detailSesion && (() => {
+      const tem = TEMATICAS.find(t => t.id===detailSesion.tematicaId);
+      return React.createElement('div', { className:'overlay',
+        onClick:e=>{ if(e.target===e.currentTarget) setDetail(null); }
+      },
+        React.createElement('div', { className:'sheet' },
+          React.createElement('div', { className:'sheet-handle' }),
+          React.createElement('div', { style:{
+            fontWeight:900, fontSize:17, marginBottom:2,
+            color:tem?.color||'#333'
+          } }, `${tem?.icon||''} ${tem?.nombre||detailSesion.tematicaNombre}`),
+          React.createElement('div', { style:{ fontSize:13, color:'#777', marginBottom:12 } },
+            `${detailSesion.taller} · ${formatDate(detailSesion.fecha)}`),
+
+          // Ejercicios
+          tem?.ejercicios.map(ej => React.createElement('div', { key:ej.id,
+            style:{ padding:'8px 0', borderBottom:'1px solid #f0f0f0', fontSize:13 }
+          },
+            React.createElement('div', { style:{ fontWeight:700 } }, ej.nombre),
+            React.createElement('div', { style:{ fontSize:12, color:'#888',
+              display:'flex', justifyContent:'space-between', marginTop:2 } },
+              React.createElement('span', null, ej.desc),
+              React.createElement('span', { style:{ color:tem.color, fontWeight:700 } }, ej.dos)
+            )
+          )),
+
+          detailSesion.notas && React.createElement('div', { style:{
+            marginTop:10, background:'#FFF9E6', borderRadius:10,
+            padding:'10px 12px', fontSize:13, color:'#555'
+          } },
+            React.createElement('strong', null, '📝 Notas: '),
+            detailSesion.notas
+          ),
+
+          React.createElement('button', { className:'btn btn-ghost',
+            style:{ marginTop:14 }, onClick:()=>setDetail(null) }, 'Cerrar')
+        )
+      );
+    })()
+  );
+
+  return React.createElement('div', { className:'page' },
+    React.createElement('div', { className:'tabs' },
+      [['registrar','📝 Registrar'],['historial','📚 Historial']]
+        .map(([v,l]) => React.createElement('div', { key:v,
+          className:`tab ${tab===v?'active':''}`, onClick:()=>setTab(v) }, l))
+    ),
+    tab==='registrar' ? tabRegistrar : tabHistorial
   );
 }
-
 
 
 // ═══════════════════════════════════════════════════════════════════════
