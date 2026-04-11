@@ -526,8 +526,9 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
     ),
 
     // Sync indicator
-    autoSync?.url && React.createElement(SyncIndicator,{
-      status:syncStatus, lastSync, onSync:doSync
+    React.createElement(SyncIndicator,{
+      status:syncStatus, lastSync, onSync:()=>doSync(false),
+      hasUrl:!!DB.get('scriptUrl','')
     }),
 
     // KPIs
@@ -554,7 +555,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
         React.createElement('button',{className:'btn btn-red',onClick:()=>onNav('alertas')},`🚨 Alertas (${vencidos+prontos})`)
       ),
       React.createElement('div',{className:'btn-row'},
-        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('nuevo')},'➕ Nuevo Paciente'),
+
         React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('exportar')},'📤 Exportar Excel')
       ),
       React.createElement('div',{className:'btn-row'},
@@ -1259,7 +1260,7 @@ function ViewPacientes({patients,onPatient,onNuevo}){
             style:{width:'auto',margin:'0 auto'},onClick:clearAll},'Limpiar filtros'))
       :React.createElement('div',{className:'patient-list'},
           filtered.map(p=>React.createElement(PatientRow,{key:p.id,patient:p,onClick:()=>onPatient(p)}))),
-    React.createElement('button',{className:'fab',onClick:onNuevo,title:'Nuevo paciente'},'＋')
+
   );
 }
 
@@ -1361,8 +1362,14 @@ function ViewFicha({patient,patients,setPatients,toast}){
         },'📲 WhatsApp')
       )
     ),
+    React.createElement('div',{className:'card',style:{
+      background:'#EBF5FB',border:'1px solid #AED6F1',
+      padding:'8px 14px',fontSize:12,color:'#2471A3',marginBottom:4
+    }},
+      '📖 Datos en solo lectura — se actualizan automáticamente desde Drive'
+    ),
     React.createElement('div',{className:'tabs'},
-      [['general','General'],['clinico','Clínico'],['asistencia','Asistencia'],['editar','✏️ Editar']]
+      [['general','General'],['clinico','Clínico'],['asistencia','Asistencia']]
         .map(([v,l])=>React.createElement('div',{key:v,className:`tab ${tab===v?'active':''}`,onClick:()=>setTab(v)},l))
     ),
 
@@ -3741,26 +3748,35 @@ function PINScreen({ onUnlock }) {
   );
 }
 
-function SyncIndicator({ status, lastSync, onSync }) {
+function SyncIndicator({ status, lastSync, onSync, hasUrl }) {
+  if (!hasUrl) return React.createElement('div',{
+    style:{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',
+      background:'#FEF9E7',borderRadius:10,marginBottom:10,
+      boxShadow:'0 1px 6px rgba(0,0,0,.06)',cursor:'pointer'},
+    onClick:onSync
+  },
+    React.createElement('span',{style:{fontSize:13}},'⚙️'),
+    React.createElement('span',{style:{fontSize:12,color:'#7A5C00',flex:1}},
+      'Configura el script en Config para ver datos en tiempo real'),
+    React.createElement('span',{style:{fontSize:11,color:'#2471A3',fontWeight:700}},'Configurar')
+  );
+
   const configs = {
-    idle:    { dot: 'ok',      text: lastSync ? `Sync: ${lastSync}` : 'Sin sincronizar', icon: '☁️' },
-    syncing: { dot: 'loading', text: 'Sincronizando...', icon: '🔄' },
-    ok:      { dot: 'ok',      text: `Sync: ${lastSync}`, icon: '✅' },
-    error:   { dot: 'err',     text: 'Sin conexión — datos guardados localmente', icon: '⚠️' },
-    offline: { dot: 'warn',    text: 'Offline — se sincronizará al conectarse', icon: '📴' },
+    idle:    { dot:'ok',      text: lastSync ? `Actualizado: ${lastSync}` : 'Listo para actualizar', icon:'☁️' },
+    syncing: { dot:'loading', text: 'Leyendo archivos de Drive...', icon:'🔄' },
+    ok:      { dot:'ok',      text: `Actualizado: ${lastSync}`, icon:'✅' },
+    error:   { dot:'err',     text: 'Error al leer Drive — toca para reintentar', icon:'⚠️' },
   };
   const cfg = configs[status] || configs.idle;
   return React.createElement('div', {
-    style: {
-      display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
-      background:'#fff', borderRadius:10, marginBottom:10,
-      boxShadow:'0 1px 6px rgba(0,0,0,.06)', cursor:'pointer',
-    },
-    onClick: onSync,
+    style:{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',
+      background:'#fff',borderRadius:10,marginBottom:10,
+      boxShadow:'0 1px 6px rgba(0,0,0,.06)',cursor:'pointer'},
+    onClick:onSync,
   },
-    React.createElement('div', { className:`sync-dot ${cfg.dot}` }),
-    React.createElement('span', { style:{fontSize:12, color:'#555', flex:1} }, `${cfg.icon} ${cfg.text}`),
-    React.createElement('span', { style:{fontSize:11, color:'#2471A3', fontWeight:700} }, 'Sincronizar')
+    React.createElement('div',{className:`sync-dot ${cfg.dot}`}),
+    React.createElement('span',{style:{fontSize:12,color:'#555',flex:1}},`${cfg.icon} ${cfg.text}`),
+    React.createElement('span',{style:{fontSize:11,color:'#2471A3',fontWeight:700}},'Actualizar')
   );
 }
 
@@ -4341,10 +4357,37 @@ function App(){
     }
   }
 
-  // Actualizar al abrir la app si hay URL configurada
+  // Auto-sync al abrir
   useEffect(()=>{
     const url = DB.get('scriptUrl','');
-    if(url && patients.length === 0) doSync(true);
+    if(url) doSync(true);
+  },[]);
+
+  // Auto-sync cada 30 minutos
+  useEffect(()=>{
+    const url = DB.get('scriptUrl','');
+    if(!url) return;
+    const interval = setInterval(()=>{
+      doSync(true);
+    }, 30 * 60 * 1000); // 30 minutos
+    return ()=>clearInterval(interval);
+  },[]);
+
+  // Auto-sync al volver al tab/app
+  useEffect(()=>{
+    function onVisible(){
+      if(document.visibilityState==='visible'){
+        const url = DB.get('scriptUrl','');
+        const last = DB.get('lastSync','');
+        if(!url) return;
+        // Si pasaron más de 15 min desde el último sync, actualizar
+        if(!last) { doSync(true); return; }
+        const mins = (Date.now() - new Date(`${new Date().toDateString()} ${last}`).getTime()) / 60000;
+        if(isNaN(mins)||mins>15) doSync(true);
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return ()=>document.removeEventListener('visibilitychange', onVisible);
   },[]);
 
   const visiblePatients = filtrarPorRol(patients, currentUser);
@@ -4354,7 +4397,6 @@ function App(){
   function openPatient(p){ setSel(p); setView('ficha'); }
   function goBack(){
     if(view==='ficha'){ setSel(null); setView('pacientes'); }
-    else if(view==='nuevo'){ setView('pacientes'); }
     else setView('inicio');
   }
 
@@ -4372,14 +4414,14 @@ function App(){
   };
 
   const navItems = [
-    {id:'inicio',  icon:'🏠', label:'Inicio'},
-    {id:'lista',   icon:'📋', label:'Lista'},
-    {id:'pacientes',icon:'👥',label:'Pacientes'},
-    {id:'alertas', icon:'🚨', label:'Alertas', dot:alertCount>0},
-    {id:'rayen',   icon:'🏥', label:'RAYEN'},
-    {id:'rutinas', icon:'📚', label:'Rutinas'},
-    {id:'agenda',  icon:'📅', label:'Agenda'},
-    {id:'config',  icon:'⚙️', label:'Config'},
+    {id:'inicio',   icon:'🏠', label:'Inicio'},
+    {id:'pacientes',icon:'👥', label:'Pacientes'},
+    {id:'alertas',  icon:'🚨', label:'Alertas', dot:alertCount>0},
+    {id:'lista',    icon:'📋', label:'Lista'},
+    {id:'rayen',    icon:'🏥', label:'RAYEN'},
+    {id:'rutinas',  icon:'📚', label:'Rutinas'},
+    {id:'agenda',   icon:'📅', label:'Agenda'},
+    {id:'config',   icon:'⚙️', label:'Config'},
   ];
 
   // PIN lock
@@ -4422,7 +4464,7 @@ function App(){
       : view==='inicio'    ? React.createElement(ViewInicio,{patients:visiblePatients,attendanceLog,onNav:setView,currentUser,autoSync,syncStatus,lastSync,doSync})
       : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
       : view==='pacientes' ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
-      : view==='nuevo'     ? React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:goBack,doSync,autoSync})
+      : view==='nuevo'     ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:null})
       : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
       : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
       : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
