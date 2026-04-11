@@ -427,34 +427,75 @@ body{
 
 /* ── WELCOME BANNER (Home) ────────────────────────────── */
 .welcome-banner{
-  background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 60%,var(--teal) 100%);
-  border-radius:var(--radius);padding:18px 80px 18px 16px;
+  background:linear-gradient(135deg,#0A1628 0%,#1A3A5C 40%,#C00000 100%);
+  border-radius:var(--radius);padding:18px 110px 18px 16px;
   margin-bottom:14px;position:relative;overflow:hidden;
-  box-shadow:var(--shadow-lg);
+  box-shadow:0 4px 24px rgba(192,0,0,.3),var(--shadow-lg);
+  border-left:4px solid #C00000;
 }
+/* Líneas de velocidad shonen */
 .welcome-banner::before{
-  content:'';position:absolute;right:-20px;top:-20px;
-  width:120px;height:120px;border-radius:50%;
-  background:rgba(255,255,255,.06);
-}
-.welcome-banner::after{
-  content:'';position:absolute;right:30px;bottom:-30px;
-  width:80px;height:80px;border-radius:50%;
-  background:rgba(255,255,255,.04);
-}
-.welcome-banner h2{
-  color:#fff;font-size:18px;font-weight:900;
-  margin-bottom:4px;position:relative;z-index:1;
-}
-.welcome-banner p{
-  color:rgba(255,255,255,.75);font-size:12px;
-  position:relative;line-height:1.5;z-index:1;
-}
-.welcome-figure{
-  position:absolute;right:10px;top:50%;transform:translateY(-50%);
-  font-size:48px;opacity:.9;filter:drop-shadow(0 2px 8px rgba(0,0,0,.2));
+  content:'';position:absolute;inset:0;
+  background:repeating-linear-gradient(
+    100deg,
+    transparent 0px,
+    transparent 18px,
+    rgba(255,255,255,.03) 18px,
+    rgba(255,255,255,.03) 19px
+  );
   pointer-events:none;
 }
+/* Kanji decorativo de fondo */
+.welcome-banner::after{
+  content:'力';position:absolute;right:6px;bottom:-8px;
+  font-size:90px;font-weight:900;
+  color:rgba(192,0,0,.18);line-height:1;
+  pointer-events:none;z-index:0;
+  font-family:'Hiragino Kaku Gothic Pro','Yu Gothic','Noto Sans JP',sans-serif;
+}
+.welcome-banner h2{
+  color:#fff;font-size:17px;font-weight:900;
+  margin-bottom:4px;position:relative;z-index:1;
+  text-shadow:0 2px 8px rgba(0,0,0,.4);
+  letter-spacing:.3px;
+}
+.welcome-banner p{
+  color:rgba(255,255,255,.7);font-size:12px;
+  position:relative;line-height:1.5;z-index:1;
+}
+/* Badge kanji animado */
+.welcome-kanji{
+  position:absolute;top:6px;right:108px;
+  display:flex;flex-direction:column;gap:2px;z-index:2;
+}
+.welcome-kanji span{
+  font-size:11px;font-weight:900;
+  color:rgba(255,255,255,.5);
+  font-family:'Hiragino Kaku Gothic Pro','Yu Gothic','Noto Sans JP',sans-serif;
+  letter-spacing:1px;
+}
+.welcome-figure{
+  position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  width:100px;height:100px;z-index:2;
+  filter:drop-shadow(0 2px 12px rgba(0,0,0,.4));
+  pointer-events:none;
+}
+/* Barra de energía shonen en el banner */
+.energy-bar{
+  position:absolute;bottom:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,#C00000,#FF4444,#FFD700,#00B0F0,#C00000);
+  background-size:200% 100%;
+  animation:energyFlow 3s linear infinite;
+}
+@keyframes energyFlow{
+  0%{background-position:0% 50%}
+  100%{background-position:200% 50%}
+}
+@keyframes floatFigure{
+  0%,100%{transform:translateY(-50%) rotate(-1deg)}
+  50%{transform:translateY(calc(-50% - 4px)) rotate(1deg)}
+}
+.welcome-figure{animation:floatFigure 3s ease-in-out infinite;}
 
 /* ── STAT ACCENT ──────────────────────────────────────── */
 .stat-row{
@@ -488,3 +529,123 @@ body{
 
 /* ── DIVIDER ──────────────────────────────────────────── */
 .divider{height:1px;background:var(--bg2);margin:10px 0}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ESTILO SHONEN — MAS AMA Pro
+   健 Salud · 力 Fuerza · 活 Vitalidad
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Top bar con acento rojo shonen */
+.top-bar{
+  background:linear-gradient(135deg,#0A1628 0%,#1A3A5C 70%,#1a1a2e 100%) !important;
+  border-bottom:2px solid #C00000;
+  position:relative;
+}
+.top-bar::after{
+  content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,#C00000,#FFD700,#C00000,transparent);
+}
+.top-bar h1{
+  background:linear-gradient(135deg,#fff 0%,#E8E8E8 50%,#C8C8FF 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  font-weight:900 !important;
+  letter-spacing:1px;
+}
+
+/* KPI cards con borde izquierdo */
+.kpi-card{
+  border-left:3px solid var(--blue) !important;
+  position:relative;overflow:hidden;
+}
+.kpi-card::after{
+  content:'';position:absolute;top:-10px;right:-10px;
+  width:40px;height:40px;border-radius:50%;
+  background:rgba(255,255,255,.03);
+}
+.kpi-card.danger{border-left-color:#C00000 !important;}
+.kpi-card.ok{border-left-color:#375623 !important;}
+.kpi-card.info{border-left-color:var(--blue) !important;}
+
+/* Badge de alerta shonen */
+.badge{
+  background:linear-gradient(135deg,#C00000,#FF2222) !important;
+  box-shadow:0 0 8px rgba(192,0,0,.5) !important;
+  animation:pulseBadge 1.5s ease-in-out infinite !important;
+}
+@keyframes pulseBadge{
+  0%,100%{box-shadow:0 0 6px rgba(192,0,0,.4)}
+  50%{box-shadow:0 0 14px rgba(192,0,0,.8)}
+}
+
+/* Nav bottom con acento */
+.bottom-nav{
+  border-top:2px solid rgba(192,0,0,.3) !important;
+  background:linear-gradient(180deg,rgba(10,22,40,.98),rgba(26,58,92,.98)) !important;
+}
+.nav-item.active .icon{
+  filter:drop-shadow(0 0 6px rgba(192,0,0,.8));
+}
+.nav-item.active{
+  color:#FF4444 !important;
+  position:relative;
+}
+.nav-item.active::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:30px;height:2px;background:#C00000;border-radius:2px;
+}
+
+/* Botones primarios con energía */
+.btn-primary{
+  background:linear-gradient(135deg,#1A3A5C,#2E75B6) !important;
+  border:none !important;
+  position:relative;overflow:hidden;
+}
+.btn-primary::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);
+  transform:translateX(-100%);
+  transition:transform .4s;
+}
+.btn-primary:hover::after,.btn-primary:active::after{
+  transform:translateX(100%);
+}
+.btn-green{
+  background:linear-gradient(135deg,#1E5C2E,#375623) !important;
+}
+.btn-red{
+  background:linear-gradient(135deg,#8B0000,#C00000) !important;
+}
+
+/* Cards con micro-borde */
+.card{
+  border-top:1px solid rgba(255,255,255,.06) !important;
+  position:relative;
+}
+
+/* EmpamChip mejorado */
+.chip-red{
+  background:linear-gradient(135deg,#8B0000,#C00000) !important;
+  box-shadow:0 2px 6px rgba(192,0,0,.3) !important;
+  animation:pulseBadge 2s ease-in-out infinite;
+}
+.chip-yellow{
+  background:linear-gradient(135deg,#7A5C00,#B8860B) !important;
+}
+.chip-green{
+  background:linear-gradient(135deg,#1E5C2E,#375623) !important;
+}
+
+/* Decoración kanji en alertas */
+.page > .tabs + *::before{
+  font-family:'Hiragino Kaku Gothic Pro','Yu Gothic','Noto Sans JP',sans-serif;
+}
+
+/* Sync dot con pulso */
+.sync-dot.ok{background:#375623;box-shadow:0 0 6px rgba(55,86,35,.5);}
+.sync-dot.err{
+  background:#C00000;
+  box-shadow:0 0 8px rgba(192,0,0,.6);
+  animation:pulseBadge 1s infinite;
+}
