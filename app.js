@@ -531,9 +531,72 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
   return React.createElement('div',{className:'page'},
     // Welcome banner con figura
     React.createElement('div',{className:'welcome-banner'},
-      React.createElement('div',{className:'welcome-figure'},'🏃'),
+
+      // Kanjis decorativos
+      React.createElement('div',{className:'welcome-kanji'},
+        React.createElement('span',null,'健'),
+        React.createElement('span',null,'康'),
+        React.createElement('span',null,'力')
+      ),
+
+      // SVG abuelito con polera MAS AMA
+      React.createElement('div',{className:'welcome-figure'},
+        React.createElement('svg',{viewBox:'0 0 100 100',xmlns:'http://www.w3.org/2000/svg'},
+          // Sombra suave
+          React.createElement('ellipse',{cx:50,cy:96,rx:20,ry:4,fill:'rgba(0,0,0,0.2)'}),
+          // Piernas
+          React.createElement('rect',{x:38,y:72,width:10,height:22,rx:5,fill:'#1A3A5C'}),
+          React.createElement('rect',{x:52,y:72,width:10,height:22,rx:5,fill:'#1A3A5C'}),
+          // Zapatos
+          React.createElement('ellipse',{cx:43,cy:94,rx:7,ry:4,fill:'#111'}),
+          React.createElement('ellipse',{cx:57,cy:94,rx:7,ry:4,fill:'#111'}),
+          // Cuerpo - polera roja MAS AMA
+          React.createElement('rect',{x:34,y:48,width:32,height:28,rx:6,fill:'#C00000'}),
+          // Texto MAS AMA en la polera
+          React.createElement('text',{x:50,y:59,textAnchor:'middle',fill:'#fff',
+            fontSize:5.5,fontWeight:'900',fontFamily:'Arial,sans-serif',letterSpacing:.5},'MAS AMA'),
+          React.createElement('text',{x:50,y:67,textAnchor:'middle',fill:'rgba(255,255,255,0.7)',
+            fontSize:4,fontFamily:'Arial,sans-serif'},'2026'),
+          // Brazos
+          React.createElement('rect',{x:20,y:50,width:14,height:8,rx:4,fill:'#C00000',transform:'rotate(20 20 50)'}),
+          React.createElement('rect',{x:66,y:50,width:14,height:8,rx:4,fill:'#C00000',transform:'rotate(-20 80 50)'}),
+          // Manos
+          React.createElement('circle',{cx:19,cy:62,r:5,fill:'#F4C187'}),
+          React.createElement('circle',{cx:81,cy:62,r:5,fill:'#F4C187'}),
+          // Cuello
+          React.createElement('rect',{x:45,y:40,width:10,height:10,rx:3,fill:'#F4C187'}),
+          // Cabeza
+          React.createElement('circle',{cx:50,cy:32,r:16,fill:'#F4C187'}),
+          // Cabello blanco (adulto mayor)
+          React.createElement('path',{d:'M34 26 Q50 14 66 26 Q64 18 50 16 Q36 18 34 26Z',fill:'#E8E8E8'}),
+          // Ojos expresivos shonen
+          React.createElement('ellipse',{cx:44,cy:31,rx:3,ry:3.5,fill:'#1A3A5C'}),
+          React.createElement('ellipse',{cx:56,cy:31,rx:3,ry:3.5,fill:'#1A3A5C'}),
+          React.createElement('circle',{cx:45,cy:30,r:1,fill:'#fff'}),
+          React.createElement('circle',{cx:57,cy:30,r:1,fill:'#fff'}),
+          // Brillo en ojos
+          React.createElement('circle',{cx:46,cy:29,r:.8,fill:'#fff',opacity:.8}),
+          React.createElement('circle',{cx:58,cy:29,r:.8,fill:'#fff',opacity:.8}),
+          // Sonrisa
+          React.createElement('path',{d:'M44 37 Q50 42 56 37',stroke:'#1A3A5C',strokeWidth:1.5,fill:'none',strokeLinecap:'round'}),
+          // Rubor en mejillas
+          React.createElement('ellipse',{cx:40,cy:35,rx:4,ry:2.5,fill:'#FFB3B3',opacity:.5}),
+          React.createElement('ellipse',{cx:60,cy:35,rx:4,ry:2.5,fill:'#FFB3B3',opacity:.5}),
+          // Bastón
+          React.createElement('line',{x1:81,y1:62,x2:88,y2:94,stroke:'#8B6914',strokeWidth:3,strokeLinecap:'round'}),
+          React.createElement('ellipse',{cx:88,cy:94,rx:4,ry:2,fill:'#8B6914'}),
+          // Líneas de energía shonen (velocidad)
+          React.createElement('line',{x1:2,y1:40,x2:18,y2:40,stroke:'#FFD700',strokeWidth:1.5,opacity:.6,strokeLinecap:'round'}),
+          React.createElement('line',{x1:2,y1:50,x2:15,y2:50,stroke:'#C00000',strokeWidth:1,opacity:.5,strokeLinecap:'round'}),
+          React.createElement('line',{x1:2,y1:60,x2:18,y2:60,stroke:'#FFD700',strokeWidth:1.5,opacity:.4,strokeLinecap:'round'})
+        )
+      ),
+
       React.createElement('h2',null,`${saludo}, Daniel 👋`),
-      React.createElement('p',null,`${total} pacientes activos · ${new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})}`)
+      React.createElement('p',null,`${total} pacientes · ${new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})}`),
+
+      // Barra de energía animada
+      React.createElement('div',{className:'energy-bar'})
     ),
 
     // Sync indicator
