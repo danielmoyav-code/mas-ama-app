@@ -624,17 +624,31 @@ body{
   position:relative;
 }
 
-/* EmpamChip mejorado */
+/* EmpamChip — fondo de color claro, letra negra siempre legible */
 .chip-red{
-  background:linear-gradient(135deg,#8B0000,#C00000) !important;
-  box-shadow:0 2px 6px rgba(192,0,0,.3) !important;
+  background:#FADBD8 !important;
+  color:#7B241C !important;
+  border:1.5px solid #E74C3C !important;
+  font-weight:800 !important;
   animation:pulseBadge 2s ease-in-out infinite;
+  box-shadow:none !important;
 }
 .chip-yellow{
-  background:linear-gradient(135deg,#7A5C00,#B8860B) !important;
+  background:#FEF9E7 !important;
+  color:#784212 !important;
+  border:1.5px solid #F39C12 !important;
+  font-weight:800 !important;
 }
 .chip-green{
-  background:linear-gradient(135deg,#1E5C2E,#375623) !important;
+  background:#D5F5E3 !important;
+  color:#1E5C2E !important;
+  border:1.5px solid #27AE60 !important;
+  font-weight:800 !important;
+}
+.chip-gray{
+  background:#EAECEE !important;
+  color:#333 !important;
+  font-weight:700 !important;
 }
 
 /* Decoración kanji en alertas */
