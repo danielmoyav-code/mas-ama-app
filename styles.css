@@ -230,7 +230,7 @@ body{
 .avatar-m{background:linear-gradient(135deg,var(--blue),#1A5276)}
 .avatar-new{background:linear-gradient(135deg,var(--teal),#148F77)}
 .p-info{flex:1;min-width:0}
-.p-name{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-name{font-weight:700;font-size:14px;line-height:1.2;margin-bottom:2px}
 .p-sub{font-size:12px;color:var(--muted);margin-top:2px}
 .p-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
 
@@ -240,7 +240,7 @@ body{
   padding:12px 14px;display:flex;align-items:center;
   gap:10px;margin-bottom:8px;box-shadow:var(--shadow);
 }
-.att-name{flex:1;font-weight:600;font-size:14px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-name{flex:1;font-weight:600;font-size:14px;min-width:0;line-height:1.2}
 .att-sub{font-size:11px;color:var(--muted)}
 .att-toggle{display:flex;border-radius:10px;overflow:hidden;flex-shrink:0}
 .att-btn{width:52px;height:40px;border:none;cursor:pointer;font-size:14px;font-weight:700;transition:all .15s}
