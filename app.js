@@ -856,6 +856,18 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
               style:{background:'none',border:'none',fontSize:18,cursor:'pointer',
                      color:nota?'#7030A0':'#ccc',padding:'4px'}
             },'📝'),
+            // WhatsApp EMPAM inline (solo si urgente y tiene teléfono)
+            (p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO'))&&p.fono&&
+              React.createElement('a',{
+                href:`https://wa.me/56${p.fono.replace(/\D/g,'')}?text=${buildWspMsg(p,p.empamEstado?.includes('VENCIDO')?'VENCIDO':'PRONTO')}`,
+                target:'_blank', rel:'noopener noreferrer',
+                onClick:e=>e.stopPropagation(),
+                style:{
+                  background:'#25D366',color:'#fff',borderRadius:8,
+                  padding:'6px 10px',fontSize:11,fontWeight:700,
+                  textDecoration:'none',whiteSpace:'nowrap'
+                }
+              },'💬'),
             // Botón copiar RUT + abrir Rayen
             React.createElement('button',{
               onClick:e=>{
@@ -888,8 +900,40 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
           )
         );
       }),
+    // ── Resumen EMPAM de la sesión ─────────────────────────────────
+    (() => {
+      const presentes = tallerPacs.filter(p => getAtt(p.rut||p.id)==='P');
+      const empamUrg  = presentes.filter(p =>
+        (p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')) && p.fono);
+      if (empamUrg.length === 0) return null;
+      return React.createElement('div',{style:{
+        marginTop:10, background:'linear-gradient(90deg,#128C7E11,#25D36622)',
+        border:'1.5px solid #25D366', borderRadius:12, padding:'10px 14px',
+        display:'flex', justifyContent:'space-between', alignItems:'center'
+      }},
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontWeight:800,fontSize:13,color:'#128C7E'}},
+            `⚠️ ${empamUrg.length} presente${empamUrg.length>1?'s':''} con EMPAM urgente`),
+          React.createElement('div',{style:{fontSize:11,color:'#555'}},
+            'Con teléfono registrado')
+        ),
+        React.createElement('button',{
+          onClick:()=>{
+            empamUrg.forEach((p,i) => {
+              setTimeout(()=>{
+                window.open(`https://wa.me/56${p.fono.replace(/\D/g,'')}?text=${buildWspMsg(p,p.empamEstado?.includes('VENCIDO')?'VENCIDO':'PRONTO')}`, '_blank');
+              }, i*600);
+            });
+          },
+          style:{
+            background:'#25D366',color:'#fff',border:'none',borderRadius:10,
+            padding:'8px 14px',fontSize:13,fontWeight:800,cursor:'pointer',whiteSpace:'nowrap'
+          }
+        },'💬 WS todos')
+      );
+    })(),
     // Save + Cola de citación
-    React.createElement('div',{style:{marginTop:14,display:'flex',flexDirection:'column',gap:8}},
+    React.createElement('div',{style:{marginTop:10,display:'flex',flexDirection:'column',gap:8}},
       React.createElement('button',{className:'btn btn-green',
         onClick:()=>toast(`💾 Lista guardada — ${present} presentes, ${absent} ausentes`)},
         '💾 Confirmar Lista'),
@@ -1753,16 +1797,6 @@ function ViewAlertas({patients,onPatient}){
                borderRadius:10,padding:'8px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}
       },'📱 Cómo pedir hora')
     ),
-    // Botón WhatsApp masivo
-    (vencidos.length+prontos.length)>0 && React.createElement('button',{
-      onClick:()=>setShowWsp(true),
-      style:{
-        width:'100%',marginBottom:12,padding:'12px',borderRadius:12,border:'none',
-        background:'linear-gradient(90deg,#128C7E,#25D366)',
-        color:'#fff',fontWeight:800,fontSize:14,cursor:'pointer',
-        display:'flex',alignItems:'center',justifyContent:'center',gap:8
-      }
-    },'💬 Enviar WhatsApp a ',React.createElement('strong',null,`${vencidos.length+prontos.length}`), ' con EMPAM urgente'),
     React.createElement('div',{className:'tabs'},
       [['empam',`🔴 EMPAM (${vencidos.length+prontos.length})`],
        ['asist',`👣 Asistencia (${bajo.length})`],
@@ -4178,9 +4212,7 @@ function LoginScreen({ onLogin, usuarios }) {
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:20, fontWeight:900,
         } }, u.nombre[0]),
-        React.createElement('div', { style: { fontWeight:800, fontSize:14 } }, u.nombre),
-        React.createElement('div', { style: { fontSize:11, opacity:.8 } },
-          u.rol === ROLES.JEFE ? 'Jefe' : 'Kinesiólogo/a')
+        React.createElement('div', { style: { fontWeight:800, fontSize:14 } }, u.nombre)
       ))
     )
   );
