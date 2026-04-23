@@ -1594,8 +1594,23 @@ function ViewFicha({patient,patients,setPatients,toast}){
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: ALERTAS
 // ─────────────────────────────────────────────────────────────────────
+function buildWspMsg(p, tipo) {
+  const nombre = p.nombre?.split(' ').slice(0,2).join(' ') || 'estimado/a';
+  const intro = tipo === 'VENCIDO'
+    ? `Hola ${nombre}, le informamos que su EMPAM se encuentra VENCIDO.`
+    : `Hola ${nombre}, su EMPAM vence pronto (${formatDate(p.empamFecha)||'próximamente'}).`;
+  return encodeURIComponent(
+    `${intro}\n\nPor favor solicite su hora lo antes posible mediante:\n` +
+    `📱 App *Hora Salud*: Descárguela y busque CESFAM Félix de Amesti.\n` +
+    `💻 Web: horasalud.cl\n` +
+    `O llame directamente al CESFAM para agendar.\n\n` +
+    `Programa MAS AMA · CESFAM Félix de Amesti`
+  );
+}
+
 function ViewAlertas({patients,onPatient}){
   const [showInfo, setShowInfo] = useState(false);
+  const [showWsp, setShowWsp]   = useState(false);
 
   // Modal info App Hora Salud / Telesalud
   const modalInfo = showInfo && React.createElement('div',{className:'overlay',
@@ -1640,10 +1655,56 @@ function ViewAlertas({patients,onPatient}){
   );
 
   const [tab,setTab]=useState('empam');
-  const vencidos =patients.filter(p=>p.empamEstado?.includes('VENCIDO'));
-  const prontos  =patients.filter(p=>p.empamEstado?.includes('PRONTO'));
+  const vencidos  =patients.filter(p=>p.empamEstado?.includes('VENCIDO'));
+  const prontos   =patients.filter(p=>p.empamEstado?.includes('PRONTO'));
   const pendientes=patients.filter(p=>p.empamEstado?.includes('PEND'));
-  const bajo     =patients.filter(p=>p.alertaAsist?.includes('BAJO'));
+  const bajo      =patients.filter(p=>p.alertaAsist?.includes('BAJO'));
+
+  const urgentes  =[...vencidos,...prontos].filter(p=>p.fono);
+
+  const modalWsp = showWsp && React.createElement('div',{className:'overlay',
+    onClick:e=>{ if(e.target===e.currentTarget) setShowWsp(false); }
+  },
+    React.createElement('div',{className:'sheet',style:{maxHeight:'85vh',overflowY:'auto'}},
+      React.createElement('div',{className:'sheet-handle'}),
+      React.createElement('div',{style:{fontWeight:900,fontSize:17,marginBottom:4}},
+        '💬 WhatsApp Masivo EMPAM'),
+      React.createElement('div',{style:{fontSize:13,color:'#777',marginBottom:16}},
+        `${urgentes.length} pacientes con teléfono · Vencido o próximo a vencer`),
+      urgentes.length === 0
+        ? React.createElement('div',{className:'empty-state'},
+            React.createElement('p',null,'Sin pacientes con teléfono registrado'))
+        : urgentes.map(p => React.createElement('div',{key:p.id,style:{
+            display:'flex',justifyContent:'space-between',alignItems:'center',
+            padding:'10px 0',borderBottom:'1px solid #f0f0f0'
+          }},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontWeight:700,fontSize:14}},
+                p.nombre?.split(' ').slice(0,2).join(' ')),
+              React.createElement('div',{style:{fontSize:12,color:'#777'}},
+                `${p.fono} · `,
+                React.createElement('span',{style:{
+                  color: p.empamEstado?.includes('VENCIDO') ? '#C00000' : '#D68910',
+                  fontWeight:700
+                }}, p.empamEstado?.includes('VENCIDO') ? 'VENCIDO' : 'VENCE PRONTO')
+              )
+            ),
+            React.createElement('a',{
+              href:`https://wa.me/56${p.fono?.replace(/\D/g,'')}?text=${buildWspMsg(p, p.empamEstado?.includes('VENCIDO')?'VENCIDO':'PRONTO')}`,
+              target:'_blank', rel:'noopener noreferrer',
+              style:{
+                background:'#25D366',color:'#fff',borderRadius:20,
+                padding:'8px 14px',fontSize:13,fontWeight:700,
+                textDecoration:'none',whiteSpace:'nowrap'
+              }
+            },'📲 Enviar')
+          )),
+      React.createElement('div',{style:{marginTop:16,fontSize:12,color:'#999',lineHeight:1.5}},
+        '* Se abre WhatsApp con mensaje pre-escrito. No se envía automáticamente.'),
+      React.createElement('button',{className:'btn btn-ghost',style:{marginTop:12},
+        onClick:()=>setShowWsp(false)},'Cerrar')
+    )
+  );
 
   function AList({list,type}){
     if(!list.length) return React.createElement('div',{className:'empty-state'},
@@ -1675,9 +1736,10 @@ function ViewAlertas({patients,onPatient}){
 
   return React.createElement('div',{className:'page'},
     modalInfo,
+    modalWsp,
     // Banner informativo
     React.createElement('div',{style:{
-      background:'#1A3A5C',borderRadius:12,padding:'12px 14px',marginBottom:12,
+      background:'#1A3A5C',borderRadius:12,padding:'12px 14px',marginBottom:8,
       display:'flex',justifyContent:'space-between',alignItems:'center'
     }},
       React.createElement('div',null,
@@ -1691,6 +1753,16 @@ function ViewAlertas({patients,onPatient}){
                borderRadius:10,padding:'8px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}
       },'📱 Cómo pedir hora')
     ),
+    // Botón WhatsApp masivo
+    (vencidos.length+prontos.length)>0 && React.createElement('button',{
+      onClick:()=>setShowWsp(true),
+      style:{
+        width:'100%',marginBottom:12,padding:'12px',borderRadius:12,border:'none',
+        background:'linear-gradient(90deg,#128C7E,#25D366)',
+        color:'#fff',fontWeight:800,fontSize:14,cursor:'pointer',
+        display:'flex',alignItems:'center',justifyContent:'center',gap:8
+      }
+    },'💬 Enviar WhatsApp a ',React.createElement('strong',null,`${vencidos.length+prontos.length}`), ' con EMPAM urgente'),
     React.createElement('div',{className:'tabs'},
       [['empam',`🔴 EMPAM (${vencidos.length+prontos.length})`],
        ['asist',`👣 Asistencia (${bajo.length})`],
@@ -3641,13 +3713,17 @@ function ViewAgenda({ toast }) {
 const ROLES = { JEFE: 'jefe', KINE: 'kine' };
 
 const USUARIOS_DEFAULT = [
-  {
-    nombre: 'DANIEL',
-    email: 'daniel.moyav@gmail.com',
-    rol: ROLES.JEFE,
-    color: '#C00000',
-    talleres: [], // jefe ve todos
-  },
+  { nombre:'DANIEL',  email:'daniel.moyav@gmail.com', rol:ROLES.JEFE, color:'#C00000', pin:'1234', talleres:[] },
+  { nombre:'SILVANA', email:'silvana@cesfam.cl',       rol:ROLES.KINE, color:'#8E44AD', pin:'2222',
+    talleres:['VM 2.0','VILLA EL SALITRE','CUMBRES ANDINAS','NUEVA VIDA','LA FUNDACIÓN','SAN SEBASTIAN','EXPERIENCIA Y JUVENTUD'] },
+  { nombre:'JORGE',   email:'jorge@cesfam.cl',         rol:ROLES.KINE, color:'#2471A3', pin:'3333',
+    talleres:['UV19 AM27','UV18','VILLA MACUL M-J'] },
+  { nombre:'ANITA',   email:'anita@cesfam.cl',         rol:ROLES.KINE, color:'#17A589', pin:'4444',
+    talleres:['UV19 PM','VILLA EL SALITRE','LA FUNDACIÓN'] },
+  { nombre:'GONZALO', email:'gonzalo@cesfam.cl',       rol:ROLES.KINE, color:'#D68910', pin:'5555',
+    talleres:['UV19 PM'] },
+  { nombre:'KINE1',   email:'kine1@cesfam.cl',         rol:ROLES.KINE, color:'#1A5276', pin:'6666',
+    talleres:[] },
 ];
 
 const TALLERES_POR_USUARIO = {
@@ -4030,47 +4106,31 @@ async function doUpdateUser(scriptUrl, userSession, targetEmail, updates) {
 }
 
 // ── LOGIN SCREEN MULTI-USUARIO ────────────────────────────────────────
-function LoginScreen({ onLogin, scriptUrl }) {
-  const [email, setEmail]     = useState('daniel.moyav@gmail.com');
+function LoginScreen({ onLogin, usuarios }) {
+  const [selUser, setSelUser] = useState(null);
   const [pin, setPin]         = useState('');
   const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
-  const [mode, setMode]       = useState('pin'); // pin | email
 
-  const savedPin = DB.get('appPin', DEFAULT_PIN);
-
-  // Si no hay script URL → usar PIN local
-  async function handleLogin() {
-    if (!scriptUrl) {
-      // Login local con PIN
-      if (pin === savedPin) {
-        onLogin({ email: 'daniel.moyav@gmail.com', nombre: 'DANIEL', rol: 'jefe',
-                  talleres: [], pin, isLocal: true });
-      } else {
-        setError('PIN incorrecto');
-        setTimeout(() => setError(''), 1500);
-      }
-      return;
+  function handleKey(k) {
+    if (!k) return;
+    if (k === '⌫') { setPin(p => p.slice(0,-1)); setError(''); return; }
+    const next = pin + k;
+    setPin(next);
+    setError('');
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (next === selUser.pin) {
+          onLogin({ ...selUser, isLocal: true });
+        } else {
+          setError('PIN incorrecto');
+          setPin('');
+          setTimeout(() => setError(''), 1500);
+        }
+      }, 100);
     }
-    // Login con Google Sheets
-    setLoading(true); setError('');
-    try {
-      const r = await doLogin(scriptUrl, email, pin);
-      if (r.ok) {
-        onLogin({ ...r.user, pin, isLocal: false });
-      } else {
-        setError(r.error || 'Error al iniciar sesión');
-      }
-    } catch(e) {
-      // Fallback a PIN local si no hay internet
-      if (pin === savedPin) {
-        onLogin({ email, nombre: 'DANIEL', rol: 'jefe', talleres: [], pin, isLocal: true });
-      } else {
-        setError('Sin conexión · PIN incorrecto');
-      }
-    }
-    setLoading(false);
   }
+
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
   const dots = [0,1,2,3].map(i => React.createElement('div', { key: i, style: {
     width: 18, height: 18, borderRadius: '50%', margin: '0 10px',
@@ -4078,70 +4138,96 @@ function LoginScreen({ onLogin, scriptUrl }) {
     transition: 'background .15s',
   }}));
 
-  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
-
-  return React.createElement('div', { style: {
-    position: 'fixed', inset: 0,
-    background: 'linear-gradient(160deg,#1A3A5C 0%,#1F4E79 50%,#17A589 100%)',
-    display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center',
-    color: '#fff', fontFamily: "'Segoe UI',Arial,sans-serif", zIndex: 999,
+  const header = React.createElement('div', { style: {
+    display:'flex', flexDirection:'column', alignItems:'center', marginBottom: 28
   } },
-    // Figura
-    React.createElement('div', { style: { fontSize: 64, marginBottom: 8 } }, '🏃'),
-    React.createElement('div', { style: { fontSize: 26, fontWeight: 900, marginBottom: 2 } },
+    React.createElement('div', { style: { fontSize: 56, marginBottom: 6 } }, '🏃'),
+    React.createElement('div', { style: { fontSize: 24, fontWeight: 900, marginBottom: 2 } },
       'MAS ', React.createElement('span', { style: { color: '#58D68D' } }, 'AMA'), ' Pro'),
-    React.createElement('div', { style: { fontSize: 13, opacity: .65, marginBottom: 28 } },
-      'CESFAM Félix de Amesti · Macul'),
+    React.createElement('div', { style: { fontSize: 12, opacity: .6 } },
+      'CESFAM Félix de Amesti · Macul')
+  );
 
-    // Email (solo si hay scriptUrl)
-    scriptUrl && React.createElement('div', { style: { width: 280, marginBottom: 16 } },
-      React.createElement('input', {
-        type: 'email', value: email, onChange: e => setEmail(e.target.value),
-        placeholder: 'tu@gmail.com',
-        style: { width: '100%', padding: '12px 16px', borderRadius: 12,
-                 border: 'none', fontSize: 15, background: 'rgba(255,255,255,.15)',
-                 color: '#fff', outline: 'none', textAlign: 'center' }
-      })
+  // ── Paso 1: Selector de usuario ─────────────────────────────────────
+  if (!selUser) return React.createElement('div', { style: {
+    position:'fixed', inset:0,
+    background:'linear-gradient(160deg,#1A3A5C 0%,#1F4E79 50%,#17A589 100%)',
+    display:'flex', flexDirection:'column', alignItems:'center',
+    color:'#fff', fontFamily:"'Segoe UI',Arial,sans-serif",
+    overflowY:'auto', padding:'32px 16px 40px',
+  } },
+    header,
+    React.createElement('div', { style: { fontSize: 14, opacity: .75, marginBottom: 16 } },
+      '¿Quién eres?'),
+    React.createElement('div', { style: {
+      display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:12, width:'100%', maxWidth:320
+    } },
+      (usuarios || USUARIOS_DEFAULT).map(u => React.createElement('button', {
+        key: u.nombre,
+        onClick: () => { setSelUser(u); setPin(''); setError(''); },
+        style: {
+          background: u.color || '#2471A3',
+          border: 'none', borderRadius: 16, padding: '18px 12px',
+          display:'flex', flexDirection:'column', alignItems:'center', gap:8,
+          cursor:'pointer', color:'#fff',
+        }
+      },
+        React.createElement('div', { style: {
+          width:44, height:44, borderRadius:'50%',
+          background:'rgba(255,255,255,.2)',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:20, fontWeight:900,
+        } }, u.nombre[0]),
+        React.createElement('div', { style: { fontWeight:800, fontSize:14 } }, u.nombre),
+        React.createElement('div', { style: { fontSize:11, opacity:.8 } },
+          u.rol === ROLES.JEFE ? 'Jefe' : 'Kinesiólogo/a')
+      ))
+    )
+  );
+
+  // ── Paso 2: PIN ────────────────────────────────────────────────────
+  return React.createElement('div', { style: {
+    position:'fixed', inset:0,
+    background:'linear-gradient(160deg,#1A3A5C 0%,#1F4E79 50%,#17A589 100%)',
+    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+    color:'#fff', fontFamily:"'Segoe UI',Arial,sans-serif", zIndex:999,
+  } },
+    header,
+    React.createElement('div', { style: {
+      display:'flex', alignItems:'center', gap:10, marginBottom:20,
+      background:'rgba(255,255,255,.12)', borderRadius:40, padding:'8px 18px'
+    } },
+      React.createElement('div', { style: {
+        width:32, height:32, borderRadius:'50%',
+        background: selUser.color || '#2471A3',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        fontWeight:900, fontSize:14,
+      } }, selUser.nombre[0]),
+      React.createElement('span', { style: { fontWeight:700 } }, selUser.nombre),
+      React.createElement('button', {
+        onClick: () => { setSelUser(null); setPin(''); setError(''); },
+        style: { background:'none', border:'none', color:'rgba(255,255,255,.5)',
+                 fontSize:18, cursor:'pointer', marginLeft:4, padding:0 }
+      }, '✕')
     ),
-
-    // PIN dots
-    React.createElement('div', { style: { display: 'flex', marginBottom: 8,
+    React.createElement('div', { style: { display:'flex', marginBottom:8,
       animation: error ? 'shake .4s ease' : 'none' } }, dots),
-    React.createElement('div', { style: { height: 20, fontSize: 13,
-      color: error ? '#FFD966' : 'transparent', marginBottom: 8 } }, error || '.'),
-
-    // Keypad
-    loading
-      ? React.createElement('div', { style: { width: 36, height: 36, border: '4px solid rgba(255,255,255,.3)',
-          borderTop: '4px solid #58D68D', borderRadius: '50%',
-          animation: 'spin .7s linear infinite', margin: '20px auto' } })
-      : React.createElement('div', { style: {
-          display: 'grid', gridTemplateColumns: 'repeat(3,80px)', gap: 14
-        } },
-          keys.map((k, i) => React.createElement('button', {
-            key: i,
-            onClick: () => {
-              if (!k) return;
-              if (k === '⌫') { setPin(p => p.slice(0,-1)); setError(''); return; }
-              const next = pin + k;
-              setPin(next);
-              setError('');
-              if (next.length === 4) { setTimeout(() => handleLogin(), 100); }
-            },
-            style: {
-              width: 80, height: 80, borderRadius: '50%', border: 'none',
-              background: k ? 'rgba(255,255,255,.12)' : 'transparent',
-              color: '#fff', fontSize: k === '⌫' ? 22 : 28, fontWeight: 700,
-              cursor: k ? 'pointer' : 'default',
-              visibility: k === '' ? 'hidden' : 'visible',
-            }
-          }, k))
-      ),
-
-    React.createElement('div', { style: { position: 'absolute', bottom: 28,
-      fontSize: 12, opacity: .4, textAlign: 'center' } },
-      scriptUrl ? 'Conectado con Google Sheets' : 'Modo local · PIN: 1234')
+    React.createElement('div', { style: { height:20, fontSize:13,
+      color: error ? '#FFD966' : 'transparent', marginBottom:8 } }, error || '.'),
+    React.createElement('div', { style: {
+      display:'grid', gridTemplateColumns:'repeat(3,80px)', gap:14
+    } },
+      keys.map((k,i) => React.createElement('button', {
+        key: i, onClick: () => handleKey(k),
+        style: {
+          width:80, height:80, borderRadius:'50%', border:'none',
+          background: k ? 'rgba(255,255,255,.12)' : 'transparent',
+          color:'#fff', fontSize: k==='⌫' ? 22 : 28, fontWeight:700,
+          cursor: k ? 'pointer' : 'default',
+          visibility: k==='' ? 'hidden' : 'visible',
+        }
+      }, k))
+    )
   );
 }
 
@@ -4378,8 +4464,8 @@ function App(){
   const [lastSync,setLastSync] = useState(()=>DB.get('lastSync',''));
   const [scriptUrl,setScriptUrl] = useState(()=>DB.get('scriptUrl',''));
   const [autoSync]             = useState(()=>DB.get('autoSync',{url:DB.get('scriptUrl',''),enabled:!!DB.get('scriptUrl','')}));
-  const [currentUser]          = useState(USUARIOS_DEFAULT[0]);
-  const [usuarios]             = useState(USUARIOS_DEFAULT);
+  const [currentUser,setCurrentUser] = useState(()=>DB.get('currentUser',null));
+  const [usuarios]                   = useState(USUARIOS_DEFAULT);
 
   useEffect(()=>{
     try{ if(unlocked) sessionStorage.setItem('masama_unlocked','1');
@@ -4503,8 +4589,17 @@ function App(){
     {id:'config',   icon:'⚙️', label:'Config'},
   ];
 
-  // PIN lock
-  if(!unlocked) return React.createElement(PINScreen,{onUnlock:()=>setUnlocked(true)});
+  // Login multi-usuario
+  if(!currentUser) return React.createElement(LoginScreen,{
+    usuarios,
+    onLogin: (user) => {
+      setCurrentUser(user);
+      DB.set('currentUser', user);
+      setUnlocked(true);
+      try{ sessionStorage.setItem('masama_unlocked','1'); }catch{}
+    },
+    scriptUrl,
+  });
 
   return React.createElement('div',{id:'app'},
     // Top bar
@@ -4522,12 +4617,16 @@ function App(){
       !hasBack && alertCount > 0 && React.createElement('span',{
         className:'badge', onClick:()=>setView('alertas')
       }, alertCount),
-      !hasBack && React.createElement('div',{style:{
-        width:28,height:28,borderRadius:'50%',
-        background:currentUser?.color||'#C00000',
-        display:'flex',alignItems:'center',justifyContent:'center',
-        fontSize:13,fontWeight:800,color:'#fff',cursor:'default'
-      }},currentUser?.nombre?.[0]||'?')
+      !hasBack && React.createElement('div',{
+        title:`${currentUser?.nombre||'?'} · Toca para salir`,
+        onClick:()=>{ if(window.confirm(`¿Cerrar sesión de ${currentUser?.nombre}?`)){ DB.set('currentUser',null); setCurrentUser(null); try{sessionStorage.removeItem('masama_unlocked');}catch{} } },
+        style:{
+          width:28,height:28,borderRadius:'50%',
+          background:currentUser?.color||'#C00000',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:13,fontWeight:800,color:'#fff',cursor:'pointer'
+        }
+      },currentUser?.nombre?.[0]||'?')
     ),
 
     // Contenido
