@@ -479,6 +479,9 @@ function ClinicalCompare({label, pre, post, unit='', lowerIsBetter=true}){
 
 
 function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatus,lastSync,doSync}){
+  const [bannerDismissed,setBannerDismissed] = useState(()=>{
+    try{ return sessionStorage.getItem('empam_banner_dismissed')==='1'; }catch{ return false; }
+  });
   const esJefe = currentUser?.rol === ROLES.JEFE;
   const total    =patients.length;
   const vencidos =patients.filter(p=>p.empamEstado?.includes('VENCIDO')).length;
@@ -524,6 +527,16 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
 
   const mujeres=patients.filter(p=>p.sexo==='M').length;
   const hombres=patients.filter(p=>p.sexo==='H').length;
+
+  // Pacientes VENCIDO que asistieron en los últimos 14 días
+  const hace14 = new Date(); hace14.setDate(hace14.getDate()-14);
+  const fecha14 = hace14.toISOString().split('T')[0];
+  const urgentesRecientes = patients.filter(p=>{
+    if(!p.empamEstado?.includes('VENCIDO')) return false;
+    return Object.entries(attendanceLog).some(([k,v])=>{
+      const parts=k.split('||'); return parts[2]===p.rut && parts[0]>=fecha14 && v==='P';
+    });
+  });
 
   const hora = new Date().getHours();
   const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
@@ -592,7 +605,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
         )
       ),
 
-      React.createElement('h2',null,`${saludo}, Daniel 👋`),
+      React.createElement('h2',null,`${saludo}, ${currentUser?.nombre||'equipo'} 👋`),
       React.createElement('p',null,`${total} pacientes · ${new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})}`),
 
       // Barra de energía animada
@@ -604,6 +617,34 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
       status:syncStatus, lastSync, onSync:()=>doSync(false),
       hasUrl:!!DB.get('scriptUrl','')
     }),
+
+    // Banner EMPAM urgente: asistieron recientemente pero VENCIDO
+    !bannerDismissed && urgentesRecientes.length>0 && React.createElement('div',{style:{
+      background:'linear-gradient(90deg,#C00000,#E74C3C)',
+      borderRadius:14,padding:'12px 14px',marginBottom:12,
+      display:'flex',gap:12,alignItems:'flex-start'
+    }},
+      React.createElement('div',{style:{fontSize:28,flexShrink:0}},'🚨'),
+      React.createElement('div',{style:{flex:1}},
+        React.createElement('div',{style:{color:'#fff',fontWeight:900,fontSize:14,marginBottom:2}},
+          `${urgentesRecientes.length} paciente${urgentesRecientes.length>1?'s':''} con EMPAM vencido asistieron esta semana`),
+        React.createElement('div',{style:{color:'rgba(255,255,255,.8)',fontSize:12,marginBottom:8}},
+          urgentesRecientes.slice(0,3).map(p=>p.nombre.split(' ').slice(0,2).join(' ')).join(', ')
+          + (urgentesRecientes.length>3?` y ${urgentesRecientes.length-3} más`:'')),
+        React.createElement('div',{style:{display:'flex',gap:8}},
+          React.createElement('button',{
+            onClick:()=>onNav('alertas'),
+            style:{background:'#fff',color:'#C00000',border:'none',borderRadius:8,
+                   padding:'6px 12px',fontSize:12,fontWeight:800,cursor:'pointer'}
+          },'Ver alertas'),
+          React.createElement('button',{
+            onClick:()=>{ setBannerDismissed(true); try{sessionStorage.setItem('empam_banner_dismissed','1');}catch{} },
+            style:{background:'rgba(255,255,255,.2)',color:'#fff',border:'none',borderRadius:8,
+                   padding:'6px 12px',fontSize:12,cursor:'pointer'}
+          },'Descartar')
+        )
+      )
+    ),
 
     // KPIs
     React.createElement('div',{className:'kpi-grid'},
@@ -1391,7 +1432,7 @@ function ViewPacientes({patients,onPatient,onNuevo}){
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: FICHA PACIENTE
 // ─────────────────────────────────────────────────────────────────────
-function ViewFicha({patient,patients,setPatients,toast}){
+function ViewFicha({patient,patients,setPatients,toast,attendanceLog}){
   const [tab,setTab]=useState('general');
   const [form,setForm]=useState({...patient});
   const [saving,setSaving]=useState(false);
@@ -1552,22 +1593,78 @@ function ViewFicha({patient,patients,setPatients,toast}){
 
 
     // ASISTENCIA
-    tab==='asistencia'&&React.createElement('div',null,
-      React.createElement('div',{className:'card',style:{textAlign:'center'}},
-        React.createElement('div',{style:{fontSize:42,fontWeight:900,
-          color:patient.alertaAsist?.includes('BAJO')?'#C00000':'#375623'}},
-          `${patient.totalPresencias||0} / ${patient.totalSesiones||24}`),
-        React.createElement('div',{style:{color:'#777',marginBottom:12}},
-          `${patient.pctAsistencia||0}% de asistencia`),
-        React.createElement(ProgressBar,{value:patient.totalPresencias||0,max:patient.totalSesiones||24,
-          color:patient.alertaAsist?.includes('BAJO')?'#C00000':'#375623'}),
-        React.createElement('div',{style:{marginTop:8,fontSize:13,color:'#888'}},
-          'Mínimo requerido: 20 de 24 sesiones'),
-        React.createElement('div',{style:{marginTop:10}},
-          React.createElement(AsistChip,{alerta:patient.alertaAsist,
-            presencias:patient.totalPresencias,total:patient.totalSesiones}))
-      )
-    ),
+    tab==='asistencia'&&(()=>{
+      const rut = patient.rut;
+      const log = attendanceLog || {};
+      const sessions = Object.entries(log)
+        .filter(([k]) => { const p=k.split('||'); return p[2]===rut; })
+        .map(([k,v]) => { const p=k.split('||'); return {fecha:p[0],taller:p[1],estado:v}; })
+        .sort((a,b)=>b.fecha.localeCompare(a.fecha));
+
+      let streak=0;
+      for(const s of sessions){ if(s.estado==='A') streak++; else break; }
+
+      return React.createElement('div',null,
+        // Resumen numérico
+        React.createElement('div',{className:'card',style:{textAlign:'center'}},
+          React.createElement('div',{style:{fontSize:42,fontWeight:900,
+            color:patient.alertaAsist?.includes('BAJO')?'#C00000':'#375623'}},
+            `${patient.totalPresencias||0} / ${patient.totalSesiones||24}`),
+          React.createElement('div',{style:{color:'#777',marginBottom:12}},
+            `${patient.pctAsistencia||0}% de asistencia`),
+          React.createElement(ProgressBar,{value:patient.totalPresencias||0,max:patient.totalSesiones||24,
+            color:patient.alertaAsist?.includes('BAJO')?'#C00000':'#375623'}),
+          React.createElement('div',{style:{marginTop:8,fontSize:13,color:'#888'}},
+            'Mínimo requerido: 20 de 24 sesiones'),
+          React.createElement('div',{style:{marginTop:10}},
+            React.createElement(AsistChip,{alerta:patient.alertaAsist,
+              presencias:patient.totalPresencias,total:patient.totalSesiones}))
+        ),
+
+        // Alerta racha de ausencias
+        streak>=2&&React.createElement('div',{style:{
+          background:'#FFF0F0',border:'1.5px solid #C00000',borderRadius:12,
+          padding:'10px 14px',marginBottom:8,
+          display:'flex',alignItems:'center',gap:10
+        }},
+          React.createElement('span',{style:{fontSize:22}},'⚠️'),
+          React.createElement('div',null,
+            React.createElement('div',{style:{fontWeight:800,fontSize:14,color:'#C00000'}},
+              `Faltó ${streak} ${streak===1?'sesión':'sesiones'} seguidas`),
+            React.createElement('div',{style:{fontSize:12,color:'#888'}},
+              'Última sesión registrada: ausente')
+          )
+        ),
+
+        // Historial de sesiones registradas
+        sessions.length>0
+          ? React.createElement('div',{className:'card'},
+              React.createElement('div',{className:'card-title'},'📅 Historial de sesiones'),
+              React.createElement('div',null,
+                sessions.slice(0,20).map((s,i)=>React.createElement('div',{key:i,style:{
+                  display:'flex',justifyContent:'space-between',alignItems:'center',
+                  padding:'8px 0',
+                  borderBottom: i<sessions.slice(0,20).length-1?'1px solid #f0f0f0':'none'
+                }},
+                  React.createElement('div',null,
+                    React.createElement('div',{style:{fontSize:13,fontWeight:600}},
+                      new Date(s.fecha+'T12:00:00').toLocaleDateString('es-CL',
+                        {weekday:'short',day:'numeric',month:'short'})),
+                    React.createElement('div',{style:{fontSize:11,color:'#aaa'}},s.taller)
+                  ),
+                  React.createElement('span',{style:{
+                    fontWeight:800,fontSize:13,
+                    color:s.estado==='P'?'#375623':'#C00000',
+                    background:s.estado==='P'?'#E9F7EF':'#FFF0F0',
+                    borderRadius:20,padding:'3px 12px'
+                  }},s.estado==='P'?'✅ Presente':'❌ Ausente')
+                ))
+              )
+            )
+          : React.createElement('div',{className:'card',style:{textAlign:'center',color:'#aaa',fontSize:13}},
+              'Sin sesiones registradas en este dispositivo')
+      );
+    })(),
 
     // EDITAR
     tab==='editar'&&React.createElement('div',null,
@@ -4675,7 +4772,7 @@ function App(){
       : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
       : view==='pacientes' ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
       : view==='nuevo'     ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:null})
-      : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast})
+      : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast,attendanceLog})
       : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
       : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
       : view==='rayen'     ? React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
