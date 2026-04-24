@@ -860,83 +860,92 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
           React.createElement('p',null,'Sin pacientes para este taller'))
       :tallerPacs.map(p=>{
         const key=p.rut||p.id; const att=getAtt(key); const nota=getNote(key);
-        return React.createElement('div',{key:p.id,className:'att-row',style:{flexWrap:'wrap',gap:6}},
-          React.createElement(Avatar,{sexo:p.sexo,nombre:p.nombre}),
-          React.createElement('div',{style:{flex:1,minWidth:0}},
-            React.createElement('div',{className:'att-name'},p.nombre),
-            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginTop:2}},
-              p.edad&&React.createElement('span',{style:{fontSize:11,color:'#888'}},p.edad+' años'),
-              React.createElement(EmpamChip,{estado:p.empamEstado}),
-              p.empamFecha&&(p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO'))&&
-                React.createElement('span',{style:{fontSize:11,color:'#C00000',fontWeight:700}},
-                  p.empamDias!=null?(p.empamDias<0?`Vencido hace ${Math.abs(p.empamDias)}d`:`Vence en ${p.empamDias}d`):'')
+        const necesitaWsp = p.fono && !p.empamEstado?.includes('VIGENTE');
+        const tipoWsp = p.empamEstado?.includes('VENCIDO')?'VENCIDO':p.empamEstado?.includes('PRONTO')?'PRONTO':'PENDIENTE';
+
+        return React.createElement('div',{key:p.id,
+          style:{borderBottom:'1px solid #f0f0f0',padding:'10px 4px'}},
+
+          // ── Fila 1: Avatar · Nombre · Toggle P/A ─────────────────
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8}},
+            React.createElement(Avatar,{sexo:p.sexo,nombre:p.nombre}),
+            React.createElement('div',{style:{flex:1,minWidth:0}},
+              React.createElement('div',{style:{
+                fontWeight:700,fontSize:14,
+                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'
+              }},p.nombre),
+              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,marginTop:2,flexWrap:'wrap'}},
+                p.edad&&React.createElement('span',{style:{fontSize:11,color:'#aaa'}},p.edad+'a'),
+                React.createElement(EmpamChip,{estado:p.empamEstado}),
+                p.empamDias!=null&&(p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO'))&&
+                  React.createElement('span',{style:{fontSize:10,color:'#C00000',fontWeight:700}},
+                    p.empamDias<0?`${Math.abs(p.empamDias)}d vencido`:`${p.empamDias}d`)
+              )
             ),
-            nota&&React.createElement('div',{style:{fontSize:11,color:'#7030A0',marginTop:2}},`📝 ${nota.slice(0,40)}${nota.length>40?'...':''}`)
-          ),
-          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}},
-            // Checkbox cola citación
-            React.createElement('div',{
-              onClick:e=>{
-                e.stopPropagation();
-                setCola(prev=>prev.includes(p.id)
-                  ? prev.filter(x=>x!==p.id)
-                  : [...prev, p.id]);
-              },
-              style:{
-                width:24,height:24,borderRadius:6,border:'2px solid',
-                borderColor:colaCitacion.includes(p.id)?'#1A3A5C':'#ccc',
-                background:colaCitacion.includes(p.id)?'#1A3A5C':'#fff',
-                display:'flex',alignItems:'center',justifyContent:'center',
-                cursor:'pointer',flexShrink:0,fontSize:14,color:'#fff',fontWeight:800,
-              }
-            }, colaCitacion.includes(p.id)?'✓':''),
-            // Botón nota
-            React.createElement('button',{
-              onClick:()=>{ setNotePatient(p); setNoteText(getNote(key)); },
-              style:{background:'none',border:'none',fontSize:18,cursor:'pointer',
-                     color:nota?'#7030A0':'#ccc',padding:'4px'}
-            },'📝'),
-            // WhatsApp EMPAM inline (solo si urgente y tiene teléfono)
-            (p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO'))&&p.fono&&
-              React.createElement('a',{
-                href:`https://wa.me/56${p.fono.replace(/\D/g,'')}?text=${buildWspMsg(p,p.empamEstado?.includes('VENCIDO')?'VENCIDO':'PRONTO')}`,
-                target:'_blank', rel:'noopener noreferrer',
-                onClick:e=>e.stopPropagation(),
-                style:{
-                  background:'#25D366',color:'#fff',borderRadius:8,
-                  padding:'6px 10px',fontSize:11,fontWeight:700,
-                  textDecoration:'none',whiteSpace:'nowrap'
-                }
-              },'💬'),
-            // Botón copiar RUT + abrir Rayen
-            React.createElement('button',{
-              onClick:e=>{
-                e.stopPropagation();
-                const rut = p.rut;
-                const btn = e.currentTarget;
-                // Copiar RUT
-                navigator.clipboard.writeText(rut).catch(()=>{
-                  const el=document.createElement('textarea');
-                  el.value=rut; document.body.appendChild(el);
-                  el.select(); document.execCommand('copy');
-                  document.body.removeChild(el);
-                });
-                // Feedback
-                btn.textContent='✅ Copiado';
-                btn.style.background='#375623';
-                setTimeout(()=>{ btn.textContent='🏥 Citar'; btn.style.background='#1A3A5C'; },1500);
-                // Abrir Rayen
-                window.open('https://administrativo.rayenaps.cl/#/mantenedor-citas','_blank');
-              },
-              style:{background:'#1A3A5C',color:'#fff',border:'none',borderRadius:8,
-                     padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',
-                     whiteSpace:'nowrap'}
-            },'🏥 Citar'),
-            // Toggle asistencia
-            React.createElement('div',{className:'att-toggle'},
+            // Toggle P/A — siempre visible a la derecha
+            React.createElement('div',{className:'att-toggle',style:{flexShrink:0}},
               React.createElement('button',{className:`att-btn ${att==='P'?'p-on':'p-off'}`,onClick:()=>setAtt(key,'P')},att==='P'?'✅':'P'),
               React.createElement('button',{className:`att-btn ${att==='A'?'a-on':'a-off'}`,onClick:()=>setAtt(key,'A')},att==='A'?'❌':'A')
             )
+          ),
+
+          // ── Fila 2: Acciones secundarias ─────────────────────────
+          React.createElement('div',{style:{
+            display:'flex',alignItems:'center',gap:6,marginTop:6,paddingLeft:44
+          }},
+            nota&&React.createElement('span',{style:{fontSize:11,color:'#7030A0',flex:1,
+              overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+              `📝 ${nota.slice(0,30)}${nota.length>30?'…':''}`),
+            !nota&&React.createElement('span',{style:{flex:1}}),
+
+            // 💬 WhatsApp — VENCIDO, PRONTO y PENDIENTE (excluye VIGENTE)
+            necesitaWsp&&React.createElement('a',{
+              href:`https://wa.me/56${p.fono.replace(/\D/g,'')}?text=${buildWspMsg(p,tipoWsp)}`,
+              target:'_blank',rel:'noopener noreferrer',
+              onClick:e=>e.stopPropagation(),
+              style:{background:'#25D366',color:'#fff',borderRadius:8,
+                     padding:'5px 10px',fontSize:11,fontWeight:700,
+                     textDecoration:'none',flexShrink:0}
+            },'💬 WA'),
+
+            // 📝 Nota
+            React.createElement('button',{
+              onClick:()=>{ setNotePatient(p); setNoteText(getNote(key)); },
+              style:{background:'none',border:'1px solid #ddd',borderRadius:8,
+                     fontSize:13,cursor:'pointer',color:nota?'#7030A0':'#bbb',
+                     padding:'4px 8px',flexShrink:0}
+            },'📝'),
+
+            // ☑ Cola citación
+            React.createElement('div',{
+              onClick:e=>{
+                e.stopPropagation();
+                setCola(prev=>prev.includes(p.id)?prev.filter(x=>x!==p.id):[...prev,p.id]);
+              },
+              style:{
+                width:26,height:26,borderRadius:6,border:'2px solid',flexShrink:0,
+                borderColor:colaCitacion.includes(p.id)?'#1A3A5C':'#ddd',
+                background:colaCitacion.includes(p.id)?'#1A3A5C':'#fff',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                cursor:'pointer',fontSize:13,color:'#fff',fontWeight:800,
+              }
+            },colaCitacion.includes(p.id)?'✓':''),
+
+            // 🏥 Citar Rayen
+            React.createElement('button',{
+              onClick:e=>{
+                e.stopPropagation();
+                navigator.clipboard.writeText(p.rut).catch(()=>{
+                  const el=document.createElement('textarea');
+                  el.value=p.rut; document.body.appendChild(el);
+                  el.select(); document.execCommand('copy');
+                  document.body.removeChild(el);
+                });
+                window.open('https://administrativo.rayenaps.cl/#/mantenedor-citas','_blank');
+              },
+              style:{background:'#1A3A5C',color:'#fff',border:'none',borderRadius:8,
+                     padding:'5px 10px',fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0}
+            },'🏥')
           )
         );
       }),
@@ -944,7 +953,7 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
     (() => {
       const presentes = tallerPacs.filter(p => getAtt(p.rut||p.id)==='P');
       const empamUrg  = presentes.filter(p =>
-        (p.empamEstado?.includes('VENCIDO')||p.empamEstado?.includes('PRONTO')) && p.fono);
+        !p.empamEstado?.includes('VIGENTE') && p.fono);
       if (empamUrg.length === 0) return null;
       return React.createElement('div',{style:{
         marginTop:10, background:'linear-gradient(90deg,#128C7E11,#25D36622)',
@@ -1737,14 +1746,17 @@ function ViewFicha({patient,patients,setPatients,toast,attendanceLog}){
 function buildWspMsg(p, tipo) {
   const nombre = p.nombre?.split(' ').slice(0,2).join(' ') || 'estimado/a';
   const intro = tipo === 'VENCIDO'
-    ? `Hola ${nombre}, le informamos que su EMPAM se encuentra VENCIDO.`
-    : `Hola ${nombre}, su EMPAM vence pronto (${formatDate(p.empamFecha)||'próximamente'}).`;
+    ? `Hola ${nombre}, le informamos que su evaluación EMPAM se encuentra *VENCIDA* y debe renovarla.`
+    : tipo === 'PRONTO'
+    ? `Hola ${nombre}, su evaluación EMPAM *vence pronto* (${formatDate(p.empamFecha)||'próximamente'}). Le recomendamos renovarla a tiempo.`
+    : `Hola ${nombre}, aún no tiene registrada su evaluación EMPAM en el programa MAS AMA. Es importante realizarla.`;
   return encodeURIComponent(
-    `${intro}\n\nPor favor solicite su hora lo antes posible mediante:\n` +
-    `📱 App *Hora Salud*: Descárguela y busque CESFAM Félix de Amesti.\n` +
-    `💻 Web: horasalud.cl\n` +
-    `O llame directamente al CESFAM para agendar.\n\n` +
-    `Programa MAS AMA · CESFAM Félix de Amesti`
+    `${intro}\n\n` +
+    `Para solicitar su hora puede hacerlo por:\n` +
+    `📱 *App Hora Salud*: descárguela y busque CESFAM Félix de Amesti\n` +
+    `💻 *Web*: horasalud.cl\n` +
+    `📞 O llame directamente al CESFAM\n\n` +
+    `Programa MAS AMA · CESFAM Félix de Amesti · Macul`
   );
 }
 
