@@ -742,9 +742,10 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: PASAR LISTA
 // ─────────────────────────────────────────────────────────────────────
-function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,setSessionNotes}){
-  const [step,setStep]=useState('taller');
-  const [selTaller,setTaller]=useState('');
+function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,setSessionNotes,currentUser}){
+  const defaultTaller = (currentUser?.talleres||[])[0]||'';
+  const [step,setStep]=useState(defaultTaller?'fecha':'taller');
+  const [selTaller,setTaller]=useState(defaultTaller);
   const [selFecha,setFecha]=useState(todayISO());
   const [search,setSearch]=useState('');
   const [notePatient,setNotePatient]=useState(null);
@@ -5079,7 +5080,7 @@ function App(){
     return ()=>document.removeEventListener('visibilitychange', onVisible);
   },[]);
 
-  const visiblePatients = filtrarPorRol(patients, currentUser);
+  const visiblePatients = patients;
   const isJefe = currentUser?.rol === ROLES.JEFE;
   const isSyncing = syncStatus === 'syncing';
 
@@ -5166,7 +5167,7 @@ function App(){
             style:{maxWidth:280,margin:'0 auto'},onClick:()=>setView('config')},
             '📂 Importar Maestro'))
       : view==='inicio'    ? React.createElement(ViewInicio,{patients:visiblePatients,attendanceLog,onNav:setView,currentUser,autoSync,syncStatus,lastSync,doSync})
-      : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN})
+      : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN,currentUser})
       : view==='pacientes' ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
       : view==='nuevo'     ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:null})
       : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast,attendanceLog})
