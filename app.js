@@ -25,6 +25,21 @@ const DB = {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// EMERGENCY WIPE — borra todo dato local y descarga el SW
+// ─────────────────────────────────────────────────────────────────────
+function emergencyWipe(){
+  try{ localStorage.clear(); }catch{}
+  try{ sessionStorage.clear(); }catch{}
+  try{
+    if('serviceWorker' in navigator)
+      navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister()));
+    if('caches' in window)
+      caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));
+  }catch{}
+  setTimeout(()=>{ try{ window.location.replace(window.location.pathname+'?wiped=1'); }catch{ window.location.reload(); } },500);
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────
 const DEFAULT_PIN = '1234';
@@ -2023,6 +2038,7 @@ function ViewExportar({patients,attendanceLog,toast}){
 // ─────────────────────────────────────────────────────────────────────
 function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSession,onSync,scriptUrl,setScriptUrlProp}){
   const [tab,setTab]       = useState('sync');
+  const [wipeInput,setWipeInput] = useState('');
   const [urlInput,setUrl]  = useState(()=>DB.get('scriptUrl','')||SCRIPT_URL_EMBEDDED||'');
   const [testing,setTest]  = useState(false);
   const [diagResult,setDiag] = useState(null); // {ok, msg, pacs, raw}
@@ -2094,7 +2110,7 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
 
   return React.createElement('div',{className:'page'},
     React.createElement('div',{className:'tabs'},
-      [['general','⚙️ General'],['sync','☁️ Sync'],['datos','🗄️ Datos']]
+      [['general','⚙️ General'],['sync','☁️ Sync'],['datos','🗄️ Datos'],['seguridad','🔐 Seguridad']]
         .map(([v,l])=>React.createElement('div',{key:v,
           className:`tab ${tab===v?'active':''}`,onClick:()=>setTab(v)},l))
     ),
@@ -2289,6 +2305,66 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
         React.createElement('button',{
           className:'btn btn-red', onClick:resetData
         },'🗑️ Borrar datos locales del celular')
+      )
+    ),
+
+    // ── SEGURIDAD ─────────────────────────────────────────────────────
+    tab==='seguridad' && React.createElement('div',null,
+
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'🔒 Auto-bloqueo'),
+        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.6}},
+          'La app se bloquea automáticamente después de ',
+          React.createElement('strong',null,'5 minutos de inactividad'),
+          ' o si la mandas al fondo por más de 1 minuto.',React.createElement('br'),
+          'Se requiere el PIN personal para desbloquear.'),
+        React.createElement('div',{style:{
+          marginTop:10,background:'#EBF5FB',borderRadius:10,padding:'10px 12px',fontSize:12,color:'#2471A3'
+        }},
+          '⚙️ Intentos fallidos: después de 5 intentos la app se bloquea 15 min. '+
+          'Con 10 intentos totales se borra todo automáticamente.')
+      ),
+
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'☁️ Borrado remoto (si te roban el celular)'),
+        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.6,marginBottom:10}},
+          'Si te roban el celular, abre tu Google Sheet ',
+          React.createElement('strong',null,'GESTION MAS AMA 2026'),
+          ', crea una hoja llamada ',React.createElement('strong',null,'SEGURIDAD'),
+          ' y escribe ',React.createElement('strong',null,'BORRAR'),
+          ' en la celda A1.',React.createElement('br'),
+          'La próxima vez que la app sincronice (cualquier WiFi), borrará todos los datos del dispositivo.')
+      ),
+
+      React.createElement('div',{className:'card',style:{border:'2px solid #E74C3C'}},
+        React.createElement('div',{className:'card-title',style:{color:'#C0392B'}},'🚨 Borrar todo ahora (emergencia local)'),
+        React.createElement('div',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
+          'Esto elimina TODOS los datos de esta app en este dispositivo: pacientes, asistencia, notas, sesión. ' +
+          'La información en Google Sheets NO se borra.'),
+        React.createElement('div',{style:{fontSize:12,fontWeight:700,color:'#C0392B',marginBottom:6}},
+          'Escribe BORRAR para confirmar:'),
+        React.createElement('input',{
+          type:'text',value:wipeInput,
+          onChange:e=>setWipeInput(e.target.value),
+          placeholder:'BORRAR',
+          style:{width:'100%',boxSizing:'border-box',borderRadius:10,border:'2px solid #E74C3C',
+                 padding:'10px 12px',fontSize:15,fontWeight:700,letterSpacing:2,
+                 textAlign:'center',color:'#C0392B',marginBottom:10,outline:'none'}
+        }),
+        React.createElement('button',{
+          style:{
+            width:'100%',background:wipeInput==='BORRAR'?'#C0392B':'#ddd',
+            color:wipeInput==='BORRAR'?'#fff':'#999',border:'none',borderRadius:12,
+            padding:'14px',fontWeight:900,fontSize:15,
+            cursor:wipeInput==='BORRAR'?'pointer':'not-allowed',transition:'all .2s'
+          },
+          disabled:wipeInput!=='BORRAR',
+          onClick:()=>{
+            if(wipeInput!=='BORRAR') return;
+            if(window.confirm('¿Seguro? Se borrarán TODOS los datos de este dispositivo. Esto no se puede deshacer.'))
+              emergencyWipe();
+          }
+        },'🚨 BORRAR TODO AHORA')
       )
     )
   );
@@ -4627,6 +4703,95 @@ async function doUpdateUser(scriptUrl, userSession, targetEmail, updates) {
 }
 
 // ── LOGIN SCREEN MULTI-USUARIO ────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// LOCK SCREEN — se muestra cuando la app se auto-bloquea por inactividad
+// ─────────────────────────────────────────────────────────────────────
+function LockScreen({ user, onUnlock, onWipe }) {
+  const FAIL_KEY  = 'pin_lock_fails';
+  const UNTIL_KEY = 'pin_lock_until';
+  const [pin, setPin]       = useState('');
+  const [error, setError]   = useState('');
+  const [lockedMin, setLMin]= useState(0);
+
+  useEffect(()=>{
+    const check=()=>{
+      const until=parseInt(DB.get(UNTIL_KEY,0)||0);
+      setLMin(until>Date.now()?Math.ceil((until-Date.now())/60000):0);
+    };
+    check();
+    const t=setInterval(check,10000);
+    return()=>clearInterval(t);
+  },[]);
+
+  function handleKey(k){
+    const until=parseInt(DB.get(UNTIL_KEY,0)||0);
+    if(until>Date.now()){ return; }
+    if(!k) return;
+    if(k==='⌫'){ setPin(p=>p.slice(0,-1)); setError(''); return; }
+    const next=pin+k; setPin(next); setError('');
+    if(next.length===4){
+      setTimeout(()=>{
+        if(next===user.pin){
+          DB.set(FAIL_KEY,0); DB.del(UNTIL_KEY);
+          onUnlock();
+        } else {
+          const fails=(parseInt(DB.get(FAIL_KEY,0))||0)+1;
+          DB.set(FAIL_KEY,fails);
+          if(fails>=10){ onWipe(); }
+          else if(fails>=5){
+            const until=Date.now()+15*60*1000;
+            DB.set(UNTIL_KEY,until); setLMin(15);
+            setError('Demasiados intentos — bloqueado 15 min');
+          } else {
+            setError(`PIN incorrecto — ${10-fails} intentos antes de borrado`);
+          }
+          setPin('');
+        }
+      },100);
+    }
+  }
+
+  const keys=['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  const dots=[0,1,2,3].map(i=>React.createElement('div',{key:i,style:{
+    width:18,height:18,borderRadius:'50%',margin:'0 10px',
+    background:pin.length>i?'#58D68D':'rgba(255,255,255,.25)',transition:'background .15s'
+  }}));
+
+  return React.createElement('div',{style:{
+    position:'fixed',inset:0,
+    background:'linear-gradient(160deg,#0B1E3A 0%,#1A3A5C 50%,#0D3349 100%)',
+    display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+    color:'#fff',fontFamily:"'Segoe UI',Arial,sans-serif",zIndex:9999,
+  }},
+    React.createElement('div',{style:{fontSize:48,marginBottom:8}},'🔒'),
+    React.createElement('div',{style:{fontSize:18,fontWeight:900,marginBottom:4}},'App bloqueada'),
+    React.createElement('div',{style:{fontSize:12,opacity:.6,marginBottom:28}},
+      'Sesión de '+(user.displayNombre||user.nombre)+' — ingresa tu PIN'),
+    lockedMin>0
+      ? React.createElement('div',{style:{
+          background:'rgba(231,76,60,.2)',border:'1px solid #E74C3C',
+          borderRadius:12,padding:'14px 24px',textAlign:'center',maxWidth:280
+        }},
+          React.createElement('div',{style:{fontWeight:800,color:'#FF6B6B',marginBottom:4}},'🚫 Demasiados intentos'),
+          React.createElement('div',{style:{fontSize:13,opacity:.8}},`Bloqueado ${lockedMin} min más`)
+        )
+      : React.createElement(React.Fragment,null,
+          React.createElement('div',{style:{display:'flex',marginBottom:8}},dots),
+          React.createElement('div',{style:{height:20,fontSize:13,
+            color:error?'#FFD966':'transparent',marginBottom:8}},error||'.'),
+          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,80px)',gap:14}},
+            keys.map((k,i)=>React.createElement('button',{
+              key:i,onClick:()=>handleKey(k),
+              style:{width:80,height:80,borderRadius:'50%',border:'none',
+                background:k?'rgba(255,255,255,.12)':'transparent',
+                color:'#fff',fontSize:k==='⌫'?22:28,fontWeight:700,
+                cursor:k?'pointer':'default',visibility:k===''?'hidden':'visible'}
+            },k))
+          )
+        )
+  );
+}
+
 function LoginScreen({ onLogin, usuarios }) {
   const [selUser, setSelUser] = useState(null);
   const [pin, setPin]         = useState('');
@@ -4996,6 +5161,8 @@ function App(){
     return latest ? {...stored,...latest} : stored;
   });
   const [usuarios]                   = useState(USUARIOS_DEFAULT);
+  const [locked, setLocked]          = useState(false);
+  const lastActivityRef              = useRef(Date.now());
 
   useEffect(()=>{
     try{ if(unlocked) sessionStorage.setItem('masama_unlocked','1');
@@ -5031,6 +5198,9 @@ function App(){
         throw new Error(`Respuesta inesperada: ${preview}`);
       }
       if (data.status !== 'ok') throw new Error(data.message || 'Error del servidor');
+
+      // Borrado remoto: si el Google Sheet tiene activo el flag de borrado, limpiar todo
+      if (data.wipe === true) { clearTimeout(timer); emergencyWipe(); return; }
 
       let pacs = refreshEmpam((data.pacientes || []).map(p => ({
         ...p,
@@ -5088,6 +5258,35 @@ function App(){
     return ()=>document.removeEventListener('visibilitychange', onVisible);
   },[]);
 
+  // ── Auto-bloqueo por inactividad y al ir a segundo plano ───────────
+  useEffect(()=>{
+    if(!currentUser){ setLocked(false); return; }
+    const INACTIVITY_MS = 5 * 60 * 1000; // 5 minutos
+    const resetActivity = ()=>{ lastActivityRef.current = Date.now(); };
+    document.addEventListener('click', resetActivity);
+    document.addEventListener('touchstart', resetActivity);
+    document.addEventListener('keydown', resetActivity);
+
+    const inactivityTimer = setInterval(()=>{
+      if(Date.now() - lastActivityRef.current > INACTIVITY_MS) setLocked(true);
+    }, 30000);
+
+    let hiddenAt = 0;
+    const onVisibilityLock = ()=>{
+      if(document.hidden){ hiddenAt = Date.now(); }
+      else if(hiddenAt && Date.now() - hiddenAt > 60000){ setLocked(true); hiddenAt=0; }
+    };
+    document.addEventListener('visibilitychange', onVisibilityLock);
+
+    return ()=>{
+      document.removeEventListener('click', resetActivity);
+      document.removeEventListener('touchstart', resetActivity);
+      document.removeEventListener('keydown', resetActivity);
+      document.removeEventListener('visibilitychange', onVisibilityLock);
+      clearInterval(inactivityTimer);
+    };
+  },[currentUser]);
+
   const visiblePatients = patients;
   const isJefe = currentUser?.rol === ROLES.JEFE;
   const isSyncing = syncStatus === 'syncing';
@@ -5129,11 +5328,18 @@ function App(){
       setCurrentUser(user);
       DB.set('currentUser', user);
       setUnlocked(true);
+      lastActivityRef.current = Date.now();
       try{ sessionStorage.setItem('masama_unlocked','1'); }catch{}
       // Sync inmediato al iniciar sesión
       setTimeout(()=>doSync(true), 300);
     },
     scriptUrl,
+  });
+
+  if(locked) return React.createElement(LockScreen,{
+    user: currentUser,
+    onUnlock: ()=>{ lastActivityRef.current = Date.now(); setLocked(false); },
+    onWipe: emergencyWipe,
   });
 
   return React.createElement('div',{id:'app'},
