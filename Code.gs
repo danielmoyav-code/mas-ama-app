@@ -1,175 +1,196 @@
 // ══════════════════════════════════════════════════════════════════
-//  MAS AMA Pro — Google Apps Script
+//  MAS AMA Pro — Google Apps Script  v2
 //  Solo lectura. NUNCA modifica los archivos de Drive.
-//  Despliega como Web App: Ejecutar como "Yo", Acceso "Cualquier persona"
+//  Despliega: Web App · Ejecutar como "Yo" · Acceso "Cualquier persona"
 // ══════════════════════════════════════════════════════════════════
 
 var GESTION_ID    = '1ibqTB2gfe-E5s2ceeg8Hak_hhVxnJNjtUE0111qiso0';
 var ASISTENCIA_ID = '15w4ljtG_blkgbgpjjMLQMp2rRP29uV33iQOyCPss9yM';
 
+// ── Índices de columna en hoja PLANILLA (base 0) ─────────────────
+var C = {
+  CICLO:      3,
+  ESTADO:     4,   // TALLER / LLAMAR / MANUAL+ / etc.
+  TALLER:     5,   // DETALLE ESTADO → nombre del taller
+  NOMBRE:     11,
+  RUT:        12,
+  FONO:       13,
+  WSP:        15,
+  SEXO:       16,
+  EDAD:       17,
+  HTA:        22,
+  ECV:        23,
+  DM:         24,
+  DMIR:       25,
+  RESP:       26,
+  CAID:       27,
+  PREVISION:  29,
+  EMPAM_EST:  31,  // código interno (ASR/ACR/PEND/etc.)
+  EMPAM_VIG:  32,  // fecha vencimiento o "Prox. MAY"
+  TUG_PRE:    43,
+  TUG_POST:   44,
+  CAT_I:      45,
+  CAT_E:      46,
+  EUP_D_PRE:  47,
+  EUP_I_PRE:  48,
+  EUP_D_POST: 51,
+  EUP_I_POST: 52,
+  PRES_TOT:   65,  // TOTAL presencias (bloque 1)
+  HAQ_PRE:    78,
+  HAQ_POST:   83,
+  RES_TUG:    88,
+  RES_EUP_D:  89,
+  RES_EUP_I:  90,
+  EMPAM_RES:  91,  // resultado final EMPAM
+};
+
+// ── Entrada HTTP ──────────────────────────────────────────────────
 function doGet(e) {
   try {
     var result = construirDatos();
     result.status    = 'ok';
     result.timestamp = new Date().toISOString();
-
-    return ContentService
-      .createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return output(result);
   } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return output({ status: 'error', message: err.toString() });
   }
 }
 
-// ── Función de prueba — ejecuta esto primero para verificar columnas ──
+function output(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Función de prueba ─────────────────────────────────────────────
 function testScript() {
   var result = construirDatos();
-  Logger.log('Pacientes leídos: ' + result.pacientes.length);
-  Logger.log('Columnas gestión: ' + result._debug.colsGestion.join(', '));
-  Logger.log('Columnas asistencia: ' + result._debug.colsAsistencia.join(', '));
-  Logger.log('Primer paciente: ' + JSON.stringify(result.pacientes[0]));
+  Logger.log('✅ Pacientes leídos: ' + result.pacientes.length);
+  Logger.log('📋 Primer paciente: ' + JSON.stringify(result.pacientes[0]));
+  Logger.log('📋 Segundo paciente: ' + JSON.stringify(result.pacientes[1]));
+  Logger.log('🏷️ Talleres únicos: ' + JSON.stringify(result._debug.talleres));
+  Logger.log('💊 EMPAM estados: ' + JSON.stringify(result._debug.empamEstados));
+  Logger.log('📊 Presencias muestra: ' + JSON.stringify(result._debug.presenciasMuestra));
 }
 
 // ── Lógica principal ──────────────────────────────────────────────
 function construirDatos() {
 
-  // ── 1. Leer hoja Gestión ────────────────────────────────────────
-  var ssGestion  = SpreadsheetApp.openById(GESTION_ID);
-  var hGestion   = ssGestion.getSheets()[0];
-  var rawGestion = hGestion.getDataRange().getValues();
-
-  var headersG = rawGestion[0].map(function(h){ return limpiar(h); });
-
-  function colG(opciones) { return buscarCol(headersG, opciones); }
-
-  var iNombre   = colG(['NOMBRE','NOMBRES','NOMBRE COMPLETO','APELLIDOS Y NOMBRE']);
-  var iRut      = colG(['RUT','RUN','RUT/RUN']);
-  var iTaller   = colG(['TALLER','TALLER ASIGNADO','GRUPO','TALLER PROGRAMA']);
-  var iCiclo    = colG(['CICLO']);
-  var iEstado   = colG(['ESTADO','ESTADO PROGRAMA']);
-  var iSexo     = colG(['SEXO','GÉNERO','GENERO']);
-  var iEdad     = colG(['EDAD','EDAD AÑOS']);
-  var iFono     = colG(['FONO','TELÉFONO','TELEFONO','FONO CONTACTO','CELULAR']);
-  var iPrev     = colG(['PREVISIÓN','PREVISION','ISAPRE/FONASA']);
-  var iHta      = colG(['HTA']);
-  var iDm       = colG(['DM','DIABETES']);
-  var iEcv      = colG(['ECV']);
-  var iDmir     = colG(['DMIR']);
-  var iResp     = colG(['RESP','RESPIRATORIO']);
-  var iCaid     = colG(['CAID','CAÍDA','CAIDAS']);
-  var iEmpamPre = colG(['EMPAM PRE','PRE EMPAM','RESULTADO PRE']);
-  var iEmpamPost= colG(['EMPAM POST','POST EMPAM','RESULTADO POST']);
-  var iEstEmpam = colG(['ESTADO EMPAM','EMPAM ESTADO','ESTADO DEL EMPAM']);
-  var iFechaEmp = colG(['FECHA VENC EMPAM','VENCIMIENTO EMPAM','FECHA EMPAM','FECHA VEC EMPAM','FECHA VENCIMIENTO']);
-  var iDiasEmp  = colG(['DIAS VIGENCIA','DÍAS VIGENCIA','DIAS EMPAM']);
-  var iTugPre   = colG(['TUG PRE']);
-  var iTugPost  = colG(['TUG POST']);
-  var iEupDPre  = colG(['EUP DER PRE','EUP D PRE','EUP DERECHO PRE']);
-  var iEupDPost = colG(['EUP DER POST','EUP D POST','EUP DERECHO POST']);
-  var iEupIPre  = colG(['EUP IZQ PRE','EUP I PRE','EUP IZQUIERDO PRE']);
-  var iEupIPost = colG(['EUP IZQ POST','EUP I POST','EUP IZQUIERDO POST']);
-  var iHaqPre   = colG(['HAQ PRE']);
-  var iHaqPost  = colG(['HAQ POST']);
-  var iResTug   = colG(['RES TUG','RESULTADO TUG','TUG RESULTADO']);
-  var iResEupD  = colG(['RES EUP DER','RESULTADO EUP DER']);
-  var iResEupI  = colG(['RES EUP IZQ','RESULTADO EUP IZQ']);
-  var iFunc     = colG(['FUNCIONAL','ESTADO FUNCIONAL','FUNC']);
-  var iIsNew    = colG(['NUEVO','INGRESO','NUEVO INGRESO']);
+  // ── 1. Hoja PLANILLA del archivo Gestión ─────────────────────────
+  var ssG     = SpreadsheetApp.openById(GESTION_ID);
+  var hoja    = ssG.getSheetByName('PLANILLA') || ssG.getSheets()[1];
+  var datos   = hoja.getDataRange().getValues();
+  // datos[0] = cabecera, datos[1..] = pacientes
 
   var pacientes = [];
+  var talleres  = {};
+  var empamEst  = {};
+  var presMuestra = [];
 
-  for (var i = 1; i < rawGestion.length; i++) {
-    var r = rawGestion[i];
-    var nombre = v(r, iNombre);
-    var rut    = v(r, iRut);
-    if (!nombre && !rut) continue; // fila vacía
+  for (var i = 1; i < datos.length; i++) {
+    var r = datos[i];
+
+    var nombre = str(r, C.NOMBRE);
+    var rut    = normRut(str(r, C.RUT));
+    if (!nombre && !rut) continue;  // fila vacía
+
+    var tallerRaw  = str(r, C.TALLER);
+    var taller     = normTaller(tallerRaw);
+    var vigenciaRaw= r[C.EMPAM_VIG];
+    var presRaw    = r[C.PRES_TOT];
+    var presencias = !isNaN(Number(presRaw)) && presRaw !== '' ? Math.round(Number(presRaw)) : 0;
+    var empamEstad = calcEmpamEstado(str(r, C.EMPAM_EST), vigenciaRaw);
+    var empamFecha = normFecha(vigenciaRaw);
+    var fono       = normFono(str(r, C.FONO));
+    var estado     = str(r, C.ESTADO);
+
+    // Debug
+    talleres[taller] = (talleres[taller]||0) + 1;
+    empamEst[empamEstad] = (empamEst[empamEstad]||0) + 1;
+    if (presMuestra.length < 5) presMuestra.push({ nombre: nombre, pres: presencias, raw: presRaw });
 
     pacientes.push({
-      id:        'p' + i,
-      nombre:    nombre,
-      rut:       normRut(rut),
-      taller:    v(r, iTaller),
-      ciclo:     v(r, iCiclo),
-      estado:    v(r, iEstado),
-      sexo:      v(r, iSexo),
-      edad:      v(r, iEdad),
-      fono:      normFono(v(r, iFono)),
-      prevision: v(r, iPrev),
-      hta:       v(r, iHta),
-      dm:        v(r, iDm),
-      ecv:       v(r, iEcv),
-      dmir:      v(r, iDmir),
-      resp:      v(r, iResp),
-      caid:      v(r, iCaid),
-      empamPre:  v(r, iEmpamPre),
-      empamPost: v(r, iEmpamPost),
-      empamEstado: calcEmpamEstado(v(r, iEstEmpam), v(r, iFechaEmp)),
-      empamFecha:  normFecha(v(r, iFechaEmp)),
-      empamDias:   v(r, iDiasEmp),
-      tugPre:    v(r, iTugPre),
-      tugPost:   v(r, iTugPost),
-      eupDerPre: v(r, iEupDPre),
-      eupDerPost:v(r, iEupDPost),
-      eupIzqPre: v(r, iEupIPre),
-      eupIzqPost:v(r, iEupIPost),
-      haqPre:    v(r, iHaqPre),
-      haqPost:   v(r, iHaqPost),
-      resTug:    v(r, iResTug),
-      resEupDer: v(r, iResEupD),
-      resEupIzq: v(r, iResEupI),
-      estadoFunc:v(r, iFunc),
-      isNew:     v(r, iIsNew),
+      id:           'p' + i,
+      nombre:       nombre,
+      rut:          rut,
+      taller:       taller,
+      tallerRaw:    tallerRaw,
+      ciclo:        str(r, C.CICLO),
+      estado:       estado,
+      sexo:         str(r, C.SEXO),
+      edad:         str(r, C.EDAD),
+      fono:         fono,
+      prevision:    str(r, C.PREVISION),
+      hta:          str(r, C.HTA),
+      ecv:          str(r, C.ECV),
+      dm:           str(r, C.DM),
+      dmir:         str(r, C.DMIR),
+      resp:         str(r, C.RESP),
+      caid:         str(r, C.CAID),
+      empamEstado:  empamEstad,
+      empamFecha:   empamFecha,
+      empamPre:     str(r, C.EMPAM_EST),
+      empamPost:    str(r, C.EMPAM_RES),
+      tugPre:       str(r, C.TUG_PRE),
+      tugPost:      str(r, C.TUG_POST),
+      eupDerPre:    str(r, C.EUP_D_PRE),
+      eupIzqPre:    str(r, C.EUP_I_PRE),
+      eupDerPost:   str(r, C.EUP_D_POST),
+      eupIzqPost:   str(r, C.EUP_I_POST),
+      haqPre:       str(r, C.HAQ_PRE),
+      haqPost:      str(r, C.HAQ_POST),
+      resTug:       str(r, C.RES_TUG),
+      resEupDer:    str(r, C.RES_EUP_D),
+      resEupIzq:    str(r, C.RES_EUP_I),
+      totalPresencias: presencias,
+      totalSesiones:   20,
+      pctAsistencia:   Math.round(presencias / 20 * 100),
+      alertaAsist:     presencias < 20 ? 'BAJO' : 'OK',
+      isNew:           estado === 'TALLER' ? '' : 'SI',
     });
   }
 
-  // ── 2. Leer hoja Asistencia ─────────────────────────────────────
-  var ssAsist  = SpreadsheetApp.openById(ASISTENCIA_ID);
-  var hAsist   = ssAsist.getSheets()[0];
-  var rawAsist = hAsist.getDataRange().getValues();
-
-  var headersA = rawAsist[0].map(function(h){ return limpiar(h); });
-
-  function colA(opciones) { return buscarCol(headersA, opciones); }
-
-  var iARut    = colA(['RUT','RUN','RUT/RUN']);
-  var iATaller = colA(['TALLER','TALLER ASIGNADO','GRUPO']);
-  var iAPres   = colA(['PRESENCIAS','ASISTENCIA N°','N° SESIONES','SESIONES ASISTIDAS','TOTAL PRESENCIAS']);
-  var iATot    = colA(['TOTAL SESIONES','SESIONES TOTALES','TOTAL']);
-  var iAPct    = colA(['% ASISTENCIA','PORCENTAJE','ASISTENCIA %','PCT']);
-
-  var talleresPorRut  = {};
+  // ── 2. Hoja Asistencia (archivo separado) ─────────────────────────
+  var talleresPorRut   = {};
   var presenciasPorRut = {};
-  var totalPorRut     = {};
-  var pctPorRut       = {};
 
-  for (var j = 1; j < rawAsist.length; j++) {
-    var ra  = rawAsist[j];
-    var rut = normRut(v(ra, iARut));
-    if (!rut) continue;
+  try {
+    var ssA  = SpreadsheetApp.openById(ASISTENCIA_ID);
+    var hA   = ssA.getSheets()[0];
+    var datA = hA.getDataRange().getValues();
 
-    talleresPorRut[rut]   = v(ra, iATaller);
-    presenciasPorRut[rut] = Number(v(ra, iAPres)) || 0;
-    totalPorRut[rut]      = Number(v(ra, iATot))  || 24;
-    pctPorRut[rut]        = Number(v(ra, iAPct))  || 0;
+    if (datA.length > 1) {
+      var headA   = datA[0].map(function(h){ return limpiar(h); });
+      var iARut   = buscarCol(headA, ['RUT','RUN']);
+      var iATaller= buscarCol(headA, ['TALLER','TALLER ASIGNADO','DETALLE ESTADO','GRUPO']);
+      var iAPres  = buscarCol(headA, ['TOTAL','PRESENCIAS','SESIONES ASISTIDAS','TOTAL PRESENCIAS','ASISTENCIA N']);
+
+      for (var j = 1; j < datA.length; j++) {
+        var ra  = datA[j];
+        var rut = normRut(ra[iARut] || '');
+        if (!rut) continue;
+        if (iATaller >= 0 && ra[iATaller]) talleresPorRut[rut] = normTaller(ra[iATaller]);
+        if (iAPres >= 0 && ra[iAPres] !== '') {
+          var p = Number(ra[iAPres]);
+          if (!isNaN(p)) presenciasPorRut[rut] = Math.round(p);
+        }
+      }
+
+      // Actualizar pacientes con datos de asistencia
+      for (var k = 0; k < pacientes.length; k++) {
+        var pac = pacientes[k];
+        if (talleresPorRut[pac.rut])   pac.taller          = talleresPorRut[pac.rut];
+        if (presenciasPorRut[pac.rut] !== undefined) {
+          pac.totalPresencias = presenciasPorRut[pac.rut];
+          pac.pctAsistencia   = Math.round(pac.totalPresencias / 20 * 100);
+          pac.alertaAsist     = pac.totalPresencias < 20 ? 'BAJO' : 'OK';
+        }
+      }
+    }
+  } catch(e2) {
+    // Archivo asistencia no accesible — se usa col 65 de Gestión
+    Logger.log('Asistencia no disponible: ' + e2.toString());
   }
-
-  // ── 3. Cruzar datos ─────────────────────────────────────────────
-  pacientes = pacientes.map(function(p) {
-    var rut = p.rut;
-    var pres  = presenciasPorRut[rut] || 0;
-    var total = totalPorRut[rut]      || 24;
-    var pct   = pctPorRut[rut]        || (total > 0 ? Math.round(pres/total*100) : 0);
-    return Object.assign({}, p, {
-      taller:          talleresPorRut[rut] || p.taller || 'SIN ASIGNAR',
-      totalPresencias: pres,
-      totalSesiones:   total,
-      pctAsistencia:   pct,
-      alertaAsist:     pres < 20 ? 'BAJO' : 'OK',
-    });
-  });
 
   return {
     pacientes: pacientes,
@@ -178,96 +199,148 @@ function construirDatos() {
       presenciasPorRut: presenciasPorRut,
     },
     _debug: {
-      colsGestion:    headersG,
-      colsAsistencia: headersA,
       totalPacientes: pacientes.length,
+      talleres:       talleres,
+      empamEstados:   empamEst,
+      presenciasMuestra: presMuestra,
     }
   };
 }
 
-// ── Helpers ───────────────────────────────────────────────────────
+// ── Normalizar nombre de taller ───────────────────────────────────
+function normTaller(raw) {
+  var d = limpiar(raw);
+  if (!d || d === 'PEND' || d.includes('MANUAL') || d.includes('CESFAM') || d.includes('ONLINE')) return 'SIN ASIGNAR';
+  if (d.includes('V.M. 2') || d.includes('VM 2') || d === 'VM L-M') return 'VM 2.0';
+  if (d.includes('SALITRE'))      return 'VILLA EL SALITRE';
+  if (d.includes('CUMBRES'))      return 'CUMBRES ANDINAS';
+  if (d.includes('NUEVA VIDA'))   return 'NUEVA VIDA';
+  if (d.includes('FUNDACI'))      return 'LA FUNDACION';
+  if (d.includes('SAN SEBAS'))    return 'SAN SEBASTIAN';
+  if (d.includes('EXPERIENCIA'))  return 'EXPERIENCIA Y JUVENTUD';
+  if (d.includes('ETERNA') || d.includes('CAPILLA') || d.includes('JUVENTUD')) return 'EXPERIENCIA Y JUVENTUD';
+  if (d.includes('UV19 AM') || d.includes('UV 19 AM')) return 'UV19 AM27';
+  if (d.includes('UV19 PM') || d.includes('UV 19 PM')) return 'UV19 PM';
+  if (d === 'UV 19' || d === 'UV19') return 'UV19 AM27';
+  if (d.includes('UV18'))         return 'UV18';
+  if (d.includes('VM M-J') || d.includes('MACUL M') || d.includes('MACUL M-J')) return 'VILLA MACUL M-J';
+  return String(raw).trim();
+}
 
-function buscarCol(headers, opciones) {
-  for (var k = 0; k < opciones.length; k++) {
-    var idx = headers.indexOf(limpiar(opciones[k]));
-    if (idx >= 0) return idx;
+// ── Calcular estado EMPAM desde fecha de vencimiento ─────────────
+function calcEmpamEstado(codigoInterno, vigenciaRaw) {
+  // Si no hay fecha, es pendiente
+  if (vigenciaRaw === '' || vigenciaRaw === null || vigenciaRaw === undefined) return 'PENDIENTE';
+
+  // Manejo "Prox. MAY" o "Prox. ENE" etc.
+  var proxMatch = String(vigenciaRaw).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
+  if (proxMatch) {
+    var meses = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
+    var mes = meses[proxMatch[1].toUpperCase()];
+    var fProxy = new Date(2026, mes - 1, 1);
+    var diasProxy = Math.round((fProxy - new Date()) / 86400000);
+    if (diasProxy < 0)   return 'VENCIDO';
+    if (diasProxy <= 30) return 'VENCE PRONTO';
+    return 'VIGENTE';
   }
-  // Búsqueda parcial como fallback
-  for (var k = 0; k < opciones.length; k++) {
-    var needle = limpiar(opciones[k]);
-    for (var h = 0; h < headers.length; h++) {
-      if (headers[h].indexOf(needle) >= 0 || needle.indexOf(headers[h]) >= 0) return h;
+
+  // Número serial de Excel (fecha como número)
+  var n = Number(vigenciaRaw);
+  if (!isNaN(n) && n > 40000) {
+    var fecha = new Date((n - 25569) * 86400000);
+    var dias  = Math.round((fecha - new Date()) / 86400000);
+    if (dias < 0)   return 'VENCIDO';
+    if (dias <= 30) return 'VENCE PRONTO';
+    return 'VIGENTE';
+  }
+
+  // String de fecha (ISO o similar)
+  if (typeof vigenciaRaw === 'string' && vigenciaRaw.length > 4) {
+    var d = new Date(vigenciaRaw);
+    if (!isNaN(d)) {
+      var dias2 = Math.round((d - new Date()) / 86400000);
+      if (dias2 < 0)   return 'VENCIDO';
+      if (dias2 <= 30) return 'VENCE PRONTO';
+      return 'VIGENTE';
     }
   }
-  return -1;
+
+  // Si la fecha es un objeto Date de Sheets
+  if (vigenciaRaw instanceof Date) {
+    var dias3 = Math.round((vigenciaRaw - new Date()) / 86400000);
+    if (dias3 < 0)   return 'VENCIDO';
+    if (dias3 <= 30) return 'VENCE PRONTO';
+    return 'VIGENTE';
+  }
+
+  return 'PENDIENTE';
 }
 
-function limpiar(s) {
-  return String(s || '').trim().toUpperCase()
-    .replace(/[áàä]/g,'A').replace(/[éèë]/g,'E')
-    .replace(/[íìï]/g,'I').replace(/[óòö]/g,'O')
-    .replace(/[úùü]/g,'U').replace(/Ñ/g,'N');
-}
-
-function v(row, idx) {
-  if (idx < 0 || idx >= row.length) return '';
-  var val = row[idx];
-  if (val === null || val === undefined) return '';
-  return String(val).trim();
-}
-
-function normRut(s) {
-  return String(s || '').trim().replace(/\s/g,'').toUpperCase();
-}
-
-function normFono(s) {
-  var clean = String(s || '').replace(/\D/g,'');
-  if (clean.length === 8) clean = '9' + clean;      // sin el 9 inicial
-  if (clean.startsWith('56')) clean = clean.slice(2); // quitar código país
-  return clean.length >= 8 ? clean : s;
-}
-
-function normFecha(s) {
-  if (!s) return '';
-  // Si es Date de Sheets
-  if (s instanceof Date) return Utilities.formatDate(s, 'America/Santiago', 'yyyy-MM-dd');
-  // Si es número serial de Excel
-  var n = Number(s);
+// ── Normalizar fecha a ISO string ─────────────────────────────────
+function normFecha(raw) {
+  if (!raw && raw !== 0) return '';
+  if (raw instanceof Date) return Utilities.formatDate(raw, 'America/Santiago', 'yyyy-MM-dd');
+  var n = Number(raw);
   if (!isNaN(n) && n > 40000) {
     var d = new Date((n - 25569) * 86400000);
     return Utilities.formatDate(d, 'America/Santiago', 'yyyy-MM-dd');
   }
-  return s;
+  var proxMatch = String(raw).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
+  if (proxMatch) return String(raw);
+  return String(raw);
 }
 
-function calcEmpamEstado(estadoCol, fechaCol) {
-  // Si la hoja ya tiene el estado calculado, usarlo
-  var est = String(estadoCol || '').toUpperCase();
-  if (est.includes('VENCIDO') || est.includes('VENC')) return 'VENCIDO';
-  if (est.includes('PRONTO') || est.includes('PRÓXIMO')) return 'VENCE PRONTO';
-  if (est.includes('VIGENTE')) return 'VIGENTE';
-  if (est.includes('PEND') || est === '') {
-    // Calcular desde la fecha
-    if (!fechaCol) return 'PENDIENTE';
-    var fecha = normFecha(fechaCol);
-    if (!fecha) return 'PENDIENTE';
-    // Manejo "Prox. ENE/FEB/..."
-    var proxMatch = String(fechaCol).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
-    if (proxMatch) {
-      var meses = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
-      var mes = meses[proxMatch[1].toUpperCase()];
-      var f = new Date(2026, mes-1, 1);
-      var dias = Math.round((f - new Date()) / 86400000);
-      if (dias < 0) return 'VENCIDO';
-      if (dias <= 30) return 'VENCE PRONTO';
-      return 'VIGENTE';
-    }
-    var d = new Date(fecha);
-    if (isNaN(d)) return 'PENDIENTE';
-    var dias = Math.round((d - new Date()) / 86400000);
-    if (dias < 0) return 'VENCIDO';
-    if (dias <= 30) return 'VENCE PRONTO';
-    return 'VIGENTE';
+// ── Normalizar RUT ────────────────────────────────────────────────
+function normRut(raw) {
+  var s = String(raw || '').trim();
+  // Convertir notación científica: "3.8099833E7" → "38099833"
+  if (/^\d+\.?\d*[Ee]\d+$/.test(s)) {
+    s = String(Math.round(Number(s)));
   }
-  return 'PENDIENTE';
+  return s.toUpperCase().replace(/\s/g, '');
+}
+
+// ── Normalizar teléfono ───────────────────────────────────────────
+function normFono(raw) {
+  var s = String(raw || '').trim();
+  // Convertir notación científica: "9.48771738E8" → "948771738"
+  if (/^\d+\.?\d*[Ee]\d+$/.test(s)) {
+    s = String(Math.round(Number(s)));
+  }
+  var digits = s.replace(/\D/g, '');
+  if (digits.startsWith('56') && digits.length === 11) digits = digits.slice(2);
+  if (digits.length === 8) digits = '9' + digits;
+  return digits.length >= 8 ? digits : s;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function str(row, idx) {
+  if (idx < 0 || idx >= row.length) return '';
+  var val = row[idx];
+  if (val === null || val === undefined) return '';
+  if (val instanceof Date) return Utilities.formatDate(val, 'America/Santiago', 'yyyy-MM-dd');
+  return String(val).trim();
+}
+
+function limpiar(s) {
+  return String(s || '').trim().toUpperCase()
+    .replace(/[áàäâ]/gi,'A').replace(/[éèëê]/gi,'E')
+    .replace(/[íìïî]/gi,'I').replace(/[óòöô]/gi,'O')
+    .replace(/[úùüû]/gi,'U').replace(/[ñ]/gi,'N');
+}
+
+function buscarCol(headers, opciones) {
+  for (var k = 0; k < opciones.length; k++) {
+    var needle = limpiar(opciones[k]);
+    var idx = headers.indexOf(needle);
+    if (idx >= 0) return idx;
+  }
+  // Búsqueda parcial
+  for (var k = 0; k < opciones.length; k++) {
+    var needle2 = limpiar(opciones[k]);
+    for (var h = 0; h < headers.length; h++) {
+      if (headers[h].indexOf(needle2) >= 0 || needle2.indexOf(headers[h]) >= 0) return h;
+    }
+  }
+  return -1;
 }
