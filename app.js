@@ -30,7 +30,7 @@ const DB = {
 const DEFAULT_PIN = '1234';
 // URL del Apps Script — se rellena una vez que Daniel lo despliega.
 // Al poner la URL aquí todos los usuarios sincronizan sin configurar nada.
-const SCRIPT_URL_EMBEDDED = '';
+const SCRIPT_URL_EMBEDDED = 'https://script.google.com/macros/s/AKfycbyj8eMYs7g3opX1JAg2ySHLXDA09eQ6CCRosdUdaAcYDH0S2eaC9LBtqcrxGp_J5Pf-/exec';
 const TALLERES = ['UV19 AM27','VILLA MACUL M-J','CUMBRES ANDINAS','UV18','VM 2.0',
   'VILLA EL SALITRE','LA FUNDACIÓN','MANUAL','NUEVA VIDA','UV19 PM',
   'SAN SEBASTIAN','EXPERIENCIA Y JUVENTUD'];
