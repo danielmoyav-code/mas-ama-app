@@ -7,6 +7,11 @@
 var GESTION_ID    = '1ibqTB2gfe-E5s2ceeg8Hak_hhVxnJNjtUE0111qiso0';
 var ASISTENCIA_ID = '15w4ljtG_blkgbgpjjMLQMp2rRP29uV33iQOyCPss9yM';
 
+// Clave secreta para comandos de administración remota.
+// Solo Daniel la conoce. No aparece en el código de la app.
+// Puedes cambiarla por cualquier texto que solo tú sepas.
+var ADMIN_SECRET  = 'MASAMA_CTRL_2026_DANIEL';
+
 // ── Índices de columna en hoja PLANILLA (base 0) ─────────────────
 var C = {
   CICLO:      3,
@@ -46,6 +51,17 @@ var C = {
 
 // ── Entrada HTTP ──────────────────────────────────────────────────
 function doGet(e) {
+  var p = e.parameter || {};
+
+  // ── Comandos de Control Maestro ───────────────────────────────────
+  if (p.action === 'admin') {
+    if (!ADMIN_SECRET || p.secret !== ADMIN_SECRET) {
+      return output({ status: 'error', message: 'No autorizado' });
+    }
+    return handleAdminCommand(p.cmd, p.val);
+  }
+
+  // ── Datos normales ────────────────────────────────────────────────
   try {
     var result = construirDatos();
     result.status    = 'ok';
@@ -53,6 +69,35 @@ function doGet(e) {
     return output(result);
   } catch (err) {
     return output({ status: 'error', message: err.toString() });
+  }
+}
+
+function handleAdminCommand(cmd, val) {
+  try {
+    var ss  = SpreadsheetApp.openById(GESTION_ID);
+    var seg = ss.getSheetByName('SEGURIDAD') || ss.insertSheet('SEGURIDAD');
+
+    if (cmd === 'wipe') {
+      seg.getRange('A1').setValue(val === '1' ? 'BORRAR' : '');
+      return output({ status:'ok', msg: val==='1' ? '🚨 Wipe activado en todos los dispositivos' : '✅ Wipe desactivado' });
+    }
+    if (cmd === 'lock') {
+      seg.getRange('A2').setValue(val === '1' ? 'BLOQUEAR' : '');
+      return output({ status:'ok', msg: val==='1' ? '🔒 Bloqueo activado en todos los dispositivos' : '✅ Bloqueo desactivado' });
+    }
+    if (cmd === 'clear') {
+      seg.getRange('A1').setValue('');
+      seg.getRange('A2').setValue('');
+      return output({ status:'ok', msg: '✅ Todos los flags borrados' });
+    }
+    if (cmd === 'status') {
+      var w = String(seg.getRange('A1').getValue()).trim().toUpperCase();
+      var l = String(seg.getRange('A2').getValue()).trim().toUpperCase();
+      return output({ status:'ok', wipeActive: w==='BORRAR', lockActive: l==='BLOQUEAR' });
+    }
+    return output({ status:'error', message: 'Comando desconocido: ' + cmd });
+  } catch(e) {
+    return output({ status:'error', message: e.toString() });
   }
 }
 
@@ -192,8 +237,21 @@ function construirDatos() {
     Logger.log('Asistencia no disponible: ' + e2.toString());
   }
 
+  // ── Verificar flags de seguridad (hoja SEGURIDAD) ────────────────
+  var wipe = false;
+  var lock = false;
+  try {
+    var segSheet = ssG.getSheetByName('SEGURIDAD');
+    if (segSheet) {
+      wipe = String(segSheet.getRange('A1').getValue()).trim().toUpperCase() === 'BORRAR';
+      lock = String(segSheet.getRange('A2').getValue()).trim().toUpperCase() === 'BLOQUEAR';
+    }
+  } catch(eWipe) { /* hoja no existe, ignorar */ }
+
   return {
     pacientes: pacientes,
+    wipe: wipe,
+    lock: lock,
     asistencia: {
       talleresPorRut:  talleresPorRut,
       presenciasPorRut: presenciasPorRut,

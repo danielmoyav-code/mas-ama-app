@@ -4704,6 +4704,184 @@ async function doUpdateUser(scriptUrl, userSession, targetEmail, updates) {
 
 // ── LOGIN SCREEN MULTI-USUARIO ────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────
+// CONTROL MAESTRO — solo visible para DANIEL (JEFE)
+// Permite bloquear o borrar todos los dispositivos desde el computador
+// ─────────────────────────────────────────────────────────────────────
+function ViewControlMaestro({ scriptUrl, toast }) {
+  const SECRET_STORE = 'masama_admin_secret';
+  const [secretInput, setSecretInput] = useState(()=>DB.get(SECRET_STORE,''));
+  const [saved, setSaved]             = useState(!!DB.get(SECRET_STORE,''));
+  const [status, setStatus]           = useState(null);
+  const [loading, setLoading]         = useState(false);
+  const [msg, setMsg]                 = useState('');
+  const url = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
+
+  function saveSecret(){
+    const s = secretInput.trim();
+    DB.set(SECRET_STORE, s);
+    setSaved(!!s);
+    toast(s ? '✅ Clave guardada' : '⚠️ Clave eliminada');
+  }
+
+  async function adminCall(cmd, val=''){
+    const secret = DB.get(SECRET_STORE,'');
+    if(!secret){ setMsg('⚠️ Guarda la clave admin primero'); return; }
+    setLoading(true); setMsg('');
+    try{
+      const r = await fetch(
+        `${url}?action=admin&secret=${encodeURIComponent(secret)}&cmd=${cmd}&val=${val}&t=${Date.now()}`,
+        { credentials:'omit' }
+      );
+      const j = await r.json();
+      if(j.status==='ok'){
+        setMsg(j.msg || '✅ OK');
+        if(j.wipeActive!==undefined) setStatus({ wipeActive:j.wipeActive, lockActive:j.lockActive });
+      } else {
+        setMsg('❌ ' + (j.message||'Error — ¿clave incorrecta?'));
+      }
+    }catch(e){ setMsg('❌ Sin conexión: '+e.message); }
+    setLoading(false);
+  }
+
+  async function fetchStatus(){ await adminCall('status'); }
+  useEffect(()=>{ if(saved) fetchStatus(); },[saved]);
+
+  const wipe = status?.wipeActive;
+  const lock = status?.lockActive;
+
+  return React.createElement('div',{className:'page'},
+
+    React.createElement('div',{style:{
+      background:'linear-gradient(135deg,#0B1E3A,#1A3A5C)',
+      borderRadius:16,padding:'18px 16px',marginBottom:14,color:'#fff',textAlign:'center'
+    }},
+      React.createElement('div',{style:{fontSize:32,marginBottom:4}},'🎛️'),
+      React.createElement('div',{style:{fontWeight:900,fontSize:18,marginBottom:2}},'Control Maestro'),
+      React.createElement('div',{style:{fontSize:12,opacity:.7}},
+        'Solo visible para Daniel · Controla todos los dispositivos')
+    ),
+
+    // ── Clave admin ──────────────────────────────────────────────────
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'card-title'},'🔑 Clave de administración'),
+      React.createElement('div',{style:{fontSize:12,color:'#777',marginBottom:10,lineHeight:1.5}},
+        'Esta clave debe coincidir con el valor de ',
+        React.createElement('code',null,'ADMIN_SECRET'),
+        ' en tu archivo Code.gs. Solo se guarda en este dispositivo.'),
+      React.createElement('div',{style:{display:'flex',gap:8}},
+        React.createElement('input',{
+          type:'password', value:secretInput,
+          onChange:e=>setSecretInput(e.target.value),
+          placeholder:'Ingresa tu clave admin...',
+          style:{flex:1,borderRadius:10,border:'1px solid #ddd',padding:'10px 12px',fontSize:14}
+        }),
+        React.createElement('button',{
+          onClick:saveSecret,
+          style:{background:'#1A3A5C',color:'#fff',border:'none',borderRadius:10,
+                 padding:'10px 16px',fontWeight:700,cursor:'pointer'}
+        },'Guardar')
+      ),
+      saved && React.createElement('div',{style:{
+        marginTop:8,fontSize:12,color:'#1E8449',fontWeight:700
+      }},'✅ Clave configurada en este dispositivo')
+    ),
+
+    // ── Estado actual ─────────────────────────────────────────────────
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+        React.createElement('div',{className:'card-title',style:{margin:0}},'📡 Estado actual'),
+        React.createElement('button',{
+          onClick:()=>fetchStatus(), disabled:loading,
+          style:{background:'#EBF5FB',border:'none',borderRadius:8,padding:'6px 12px',
+                 fontSize:12,fontWeight:700,color:'#2471A3',cursor:'pointer'}
+        }, loading ? '⏳' : '↺ Refrescar')
+      ),
+      status
+        ? React.createElement('div',{style:{display:'flex',gap:10}},
+            React.createElement('div',{style:{
+              flex:1,padding:'12px',borderRadius:12,textAlign:'center',
+              background: wipe ? '#FDEDEC':'#D5F5E3',
+              border:`2px solid ${wipe?'#E74C3C':'#1E8449'}`
+            }},
+              React.createElement('div',{style:{fontSize:22}}, wipe?'🚨':'✅'),
+              React.createElement('div',{style:{fontWeight:800,fontSize:13,color:wipe?'#C0392B':'#1E8449'}},'Wipe'),
+              React.createElement('div',{style:{fontSize:11,color:'#777'}},wipe?'ACTIVO':'inactivo')
+            ),
+            React.createElement('div',{style:{
+              flex:1,padding:'12px',borderRadius:12,textAlign:'center',
+              background: lock ? '#FEF9E7':'#EBF5FB',
+              border:`2px solid ${lock?'#F39C12':'#2471A3'}`
+            }},
+              React.createElement('div',{style:{fontSize:22}}, lock?'🔒':'🔓'),
+              React.createElement('div',{style:{fontWeight:800,fontSize:13,color:lock?'#D68910':'#2471A3'}},'Bloqueo'),
+              React.createElement('div',{style:{fontSize:11,color:'#777'}},lock?'ACTIVO':'inactivo')
+            )
+          )
+        : React.createElement('div',{style:{textAlign:'center',color:'#999',fontSize:13,padding:'12px 0'}},
+            saved ? 'Toca Refrescar para ver el estado' : 'Configura la clave para ver el estado'
+          )
+    ),
+
+    // ── Comandos ──────────────────────────────────────────────────────
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'card-title'},'⚡ Comandos remotos'),
+      React.createElement('div',{style:{fontSize:12,color:'#777',marginBottom:12,lineHeight:1.5}},
+        'Los cambios se aplican en todos los dispositivos en el próximo sync automático (máx. 15 min).'),
+
+      React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+
+        React.createElement('button',{
+          onClick:()=>adminCall('lock', lock?'0':'1'), disabled:loading,
+          style:{
+            padding:'14px',borderRadius:12,border:'none',fontWeight:800,fontSize:14,
+            cursor:'pointer',
+            background: lock ? '#FEF9E7' : '#EBF5FB',
+            color: lock ? '#D68910' : '#2471A3',
+            border: `2px solid ${lock?'#F39C12':'#2471A3'}`
+          }
+        }, lock ? '🔓 Desactivar bloqueo de dispositivos' : '🔒 Bloquear todos los dispositivos'),
+
+        React.createElement('button',{
+          onClick:()=>{ if(window.confirm('¿Activar borrado remoto? Todos los dispositivos perderán sus datos en el próximo sync.')) adminCall('wipe','1'); },
+          disabled:loading||wipe,
+          style:{
+            padding:'14px',borderRadius:12,border:'2px solid #E74C3C',
+            fontWeight:800,fontSize:14,cursor:wipe?'not-allowed':'pointer',
+            background: wipe?'#FDEDEC':'#fff', color:'#C0392B', opacity: wipe?.6:1
+          }
+        }, wipe ? '🚨 Wipe activo — esperando sync en dispositivos' : '🚨 Activar borrado remoto de datos'),
+
+        (wipe||lock) && React.createElement('button',{
+          onClick:()=>adminCall('clear'), disabled:loading,
+          style:{
+            padding:'12px',borderRadius:12,border:'2px solid #1E8449',
+            fontWeight:700,fontSize:13,cursor:'pointer',
+            background:'#D5F5E3',color:'#1E8449'
+          }
+        }, '✅ Cancelar todos los comandos activos')
+      )
+    ),
+
+    msg && React.createElement('div',{style:{
+      background: msg.startsWith('❌')?'#FDEDEC':'#D5F5E3',
+      border:`1.5px solid ${msg.startsWith('❌')?'#E74C3C':'#1E8449'}`,
+      borderRadius:12,padding:'12px 14px',fontSize:13,fontWeight:700,
+      color: msg.startsWith('❌')?'#C0392B':'#1E8449'
+    }}, msg),
+
+    React.createElement('div',{className:'card',style:{background:'#FDFEFE',border:'1px solid #EBF5FB'}},
+      React.createElement('div',{style:{fontSize:12,color:'#777',lineHeight:1.7}},
+        React.createElement('strong',null,'¿Cómo funciona?'),React.createElement('br'),
+        '1. Abre este panel en tu ',React.createElement('strong',null,'computador'),React.createElement('br'),
+        '2. ',React.createElement('strong',null,'Bloquear'),' → todos los celulares piden PIN en el próximo sync',React.createElement('br'),
+        '3. ',React.createElement('strong',null,'Wipe'),' → todos los celulares borran sus datos en el próximo sync',React.createElement('br'),
+        '4. Los cambios en Google Sheets son inmediatos desde aquí'
+      )
+    )
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // LOCK SCREEN — se muestra cuando la app se auto-bloquea por inactividad
 // ─────────────────────────────────────────────────────────────────────
 function LockScreen({ user, onUnlock, onWipe }) {
@@ -5201,6 +5379,8 @@ function App(){
 
       // Borrado remoto: si el Google Sheet tiene activo el flag de borrado, limpiar todo
       if (data.wipe === true) { clearTimeout(timer); emergencyWipe(); return; }
+      // Bloqueo remoto: fuerza re-autenticación en todos los dispositivos
+      if (data.lock === true) { setLocked(true); }
 
       let pacs = refreshEmpam((data.pacientes || []).map(p => ({
         ...p,
@@ -5308,6 +5488,7 @@ function App(){
     agenda:'Agenda Duplas', nuevo:'Nuevo Paciente',
     ficha: selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas', exportar:'Exportar Excel', config:'Configuración',
+    control:'🎛️ Control Maestro',
   };
 
   const navItems = [
@@ -5319,6 +5500,7 @@ function App(){
     {id:'rutinas',  icon:'📚', label:'Rutinas'},
     {id:'agenda',   icon:'📅', label:'Agenda'},
     {id:'config',   icon:'⚙️', label:'Config'},
+    ...(isJefe ? [{id:'control', icon:'🎛️', label:'Control'}] : []),
   ];
 
   // Login multi-usuario
@@ -5392,6 +5574,7 @@ function App(){
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
       : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{DB.set('autoSync',cfg);},userSession:currentUser,onSync:()=>doSync(false),scriptUrl,setScriptUrlProp:(url)=>{setScriptUrl(url);DB.set('scriptUrl',url);DB.set('autoSync',{url,enabled:!!url});}})
+      : view==='control'   ? React.createElement(ViewControlMaestro,{scriptUrl,toast})
       : null,
 
     // Nav
