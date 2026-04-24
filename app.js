@@ -28,6 +28,9 @@ const DB = {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────
 const DEFAULT_PIN = '1234';
+// URL del Apps Script — se rellena una vez que Daniel lo despliega.
+// Al poner la URL aquí todos los usuarios sincronizan sin configurar nada.
+const SCRIPT_URL_EMBEDDED = '';
 const TALLERES = ['UV19 AM27','VILLA MACUL M-J','CUMBRES ANDINAS','UV18','VM 2.0',
   'VILLA EL SALITRE','LA FUNDACIÓN','MANUAL','NUEVA VIDA','UV19 PM',
   'SAN SEBASTIAN','EXPERIENCIA Y JUVENTUD'];
@@ -646,20 +649,26 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
       )
     ),
 
-    // KPIs
+    // KPIs — Total / EMPAM urgente / Bajo mínimo
     React.createElement('div',{className:'kpi-grid'},
-      React.createElement('div',{className:'kpi-card info'},
+      React.createElement('div',{className:'kpi-card info',style:{position:'relative'}},
         React.createElement('div',{className:'kpi-val'},total),
-        React.createElement('div',{className:'kpi-lbl'},'Pacientes')),
-      React.createElement('div',{className:'kpi-card danger'},
+        React.createElement('div',{className:'kpi-lbl'},'Pacientes'),
+        React.createElement('div',{style:{fontSize:11,color:'#888',marginTop:2}},
+          `♀${mujeres} · ♂${hombres}`)
+      ),
+      React.createElement('div',{className:'kpi-card danger',
+        style:{cursor:'pointer'},onClick:()=>onNav('alertas')},
         React.createElement('div',{className:'kpi-val'},vencidos+prontos),
-        React.createElement('div',{className:'kpi-lbl'},'Alertas EMPAM')),
+        React.createElement('div',{className:'kpi-lbl'},'EMPAM urgente'),
+        React.createElement('div',{style:{fontSize:11,color:'#888',marginTop:2}},
+          `${vencidos} venc. · ${prontos} pronto`)
+      ),
       React.createElement('div',{className:'kpi-card danger'},
         React.createElement('div',{className:'kpi-val'},bajo),
-        React.createElement('div',{className:'kpi-lbl'},'Bajo Mín.')),
-      React.createElement('div',{className:`kpi-card ${nuevos>0?'ok':'info'}`},
-        React.createElement('div',{className:'kpi-val'},nuevos),
-        React.createElement('div',{className:'kpi-lbl'},'Nuevos'))
+        React.createElement('div',{className:'kpi-lbl'},'Bajo mínimo'),
+        React.createElement('div',{style:{fontSize:11,color:'#888',marginTop:2}},'< 20 sesiones')
+      )
     ),
 
     // Acceso rápido
@@ -670,20 +679,10 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
         React.createElement('button',{className:'btn btn-red',onClick:()=>onNav('alertas')},`🚨 Alertas (${vencidos+prontos})`)
       ),
       React.createElement('div',{className:'btn-row'},
-
-        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('exportar')},'📤 Exportar Excel')
-      ),
-      React.createElement('div',{className:'btn-row'},
-        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('rem')},'📊 Generar REM'),
-        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('agenda')},'📅 Ver Agenda')
+        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('exportar')},'📤 Exportar Excel'),
+        React.createElement('button',{className:'btn btn-ghost',onClick:()=>onNav('rem')},'📊 REM')
       )
     ),
-
-    // Hoy
-    hoyReg>0&&React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'✅ Actividad de hoy'),
-      React.createElement('div',{style:{fontSize:18,fontWeight:800,color:'#375623'}},
-        `${hoyReg} asistencias marcadas`)),
 
     // EMPAM donut + stats
     React.createElement('div',{className:'card'},
@@ -694,7 +693,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
           [['🔴 Vencido',vencidos,'#C00000'],['🟡 Vence Pronto',prontos,'#ED7D31'],
            ['🟢 Vigente',vigente,'#375623'],['⏳ Pendiente',pendiente,'#888']]
             .map(([l,v,c])=>React.createElement('div',{key:l,style:{
-              display:'flex',justifyContent:'space-between',padding:'3px 0',
+              display:'flex',justifyContent:'space-between',padding:'4px 0',
               borderBottom:'1px solid #f0f0f0',fontSize:13
             }},
               React.createElement('span',{style:{color:c,fontWeight:600}},l),
@@ -704,9 +703,9 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
       )
     ),
 
-    // Sexo
+    // Distribución por sexo
     React.createElement('div',{className:'card'},
-      React.createElement('div',{className:'card-title'},'👥 Distribución por Sexo'),
+      React.createElement('div',{className:'card-title'},'👥 Sexo'),
       React.createElement('div',{style:{display:'flex',gap:12}},
         React.createElement('div',{style:{flex:1,background:'#EDE0F7',borderRadius:10,padding:'12px',textAlign:'center'}},
           React.createElement('div',{style:{fontSize:28,fontWeight:900,color:'#7030A0'}},mujeres),
@@ -721,15 +720,15 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
       )
     ),
 
-    // Talleres bar chart
+    // Pacientes por taller
     React.createElement('div',{className:'card'},
       React.createElement('div',{className:'card-title'},'🏃 Pacientes por Taller'),
       React.createElement(BarChart,{data:tallerBarData,horizontal:true}),
       React.createElement('div',{style:{fontSize:11,color:'#999',marginTop:4}},
-        '🔵 Azul = OK  ·  🔴 Rojo = más del 50% bajo el mínimo')
+        '🔵 Normal  ·  🔴 > 50% bajo mínimo')
     ),
 
-    // Edad bar chart
+    // Distribución por edad
     React.createElement('div',{className:'card'},
       React.createElement('div',{className:'card-title'},'🎂 Distribución por Edad'),
       React.createElement(BarChart,{data:ageBarData,height:90,color:'#7030A0'})
@@ -4591,7 +4590,12 @@ function App(){
   // Solo lectura desde Google Sheets
   const [syncStatus,setSyncSt] = useState('idle');
   const [lastSync,setLastSync] = useState(()=>DB.get('lastSync',''));
-  const [scriptUrl,setScriptUrl] = useState(()=>DB.get('scriptUrl',''));
+  const [scriptUrl,setScriptUrl] = useState(()=>{
+    const saved = DB.get('scriptUrl','');
+    if(saved) return saved;
+    if(SCRIPT_URL_EMBEDDED){ DB.set('scriptUrl',SCRIPT_URL_EMBEDDED); return SCRIPT_URL_EMBEDDED; }
+    return '';
+  });
   const [autoSync]             = useState(()=>DB.get('autoSync',{url:DB.get('scriptUrl',''),enabled:!!DB.get('scriptUrl','')}));
   const [currentUser,setCurrentUser] = useState(()=>DB.get('currentUser',null));
   const [usuarios]                   = useState(USUARIOS_DEFAULT);
@@ -4605,34 +4609,24 @@ function App(){
 
   // ── ACTUALIZAR desde Google Sheets (solo lectura) ──────────────────
   async function doSync(silent=false) {
-    const url = DB.get('scriptUrl','');
+    const url = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
     if (!url) { if(!silent) toast('⚙️ Ve a Config y configura la URL del script'); return; }
     setSyncSt('syncing');
-    if(!silent) toast('📥 Leyendo datos del equipo...');
     try {
       const res = await fetch(`${url}?action=all&t=${Date.now()}`);
-      if(!res.ok) throw new Error('Error de red');
+      if(!res.ok) throw new Error('Error de red ' + res.status);
       const data = await res.json();
-      if(data.status !== 'ok') throw new Error(data.message||'Error del servidor');
+      if(data.status !== 'ok') throw new Error(data.message||'Respuesta inesperada del servidor');
 
-      // Procesar pacientes
-      let pacs = data.pacientes || [];
-      // Cruzar con asistencia para asignar taller y presencias
-      if(data.asistencia) {
-        const { talleresPorRut, presenciasPorRut } = data.asistencia;
-        pacs = pacs.map(p => {
-          const rut = p.rut;
-          const taller = talleresPorRut[rut] || p.taller || 'SIN ASIGNAR';
-          const pres = presenciasPorRut[rut] || 0;
-          return {
-            ...p,
-            taller,
-            totalPresencias: pres,
-            alertaAsist: pres < 10 ? 'BAJO' : 'OK',
-            empamDias: p.empamFecha ? Math.round((new Date(p.empamFecha)-new Date())/86400000) : null,
-          };
-        });
-      }
+      // El script ya entrega los datos cruzados y calculados.
+      // Solo añadimos empamDias localmente (depende de la fecha de hoy).
+      let pacs = (data.pacientes || []).map(p => ({
+        ...p,
+        empamDias: p.empamFecha
+          ? Math.round((new Date(p.empamFecha) - new Date()) / 86400000)
+          : null,
+        alertaAsist: (p.totalPresencias||0) < 20 ? 'BAJO' : 'OK',
+      }));
 
       if(pacs.length > 0) {
         setPatients(pacs);
@@ -4642,43 +4636,39 @@ function App(){
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync',now);
       setSyncSt('ok');
-      if(!silent) toast(`✅ ${pacs.length} pacientes actualizados desde Drive`);
+      if(!silent) toast(`✅ ${pacs.length} pacientes actualizados`);
       setTimeout(()=>setSyncSt('idle'),3000);
     } catch(e) {
       setSyncSt('error');
-      if(!silent) toast('❌ '+(e.message||'Error al leer los archivos'));
+      if(!silent) toast('❌ Sin conexión — usando datos guardados');
       setTimeout(()=>setSyncSt('idle'),5000);
     }
   }
 
   // Auto-sync al abrir
   useEffect(()=>{
-    const url = DB.get('scriptUrl','');
+    const url = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
     if(url) doSync(true);
   },[]);
 
   // Auto-sync cada 30 minutos
   useEffect(()=>{
-    const url = DB.get('scriptUrl','');
+    const url = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
     if(!url) return;
-    const interval = setInterval(()=>{
-      doSync(true);
-    }, 30 * 60 * 1000); // 30 minutos
+    const interval = setInterval(()=>doSync(true), 30*60*1000);
     return ()=>clearInterval(interval);
   },[]);
 
-  // Auto-sync al volver al tab/app
+  // Auto-sync al volver al tab/app (si pasaron más de 15 min)
   useEffect(()=>{
     function onVisible(){
-      if(document.visibilityState==='visible'){
-        const url = DB.get('scriptUrl','');
-        const last = DB.get('lastSync','');
-        if(!url) return;
-        // Si pasaron más de 15 min desde el último sync, actualizar
-        if(!last) { doSync(true); return; }
-        const mins = (Date.now() - new Date(`${new Date().toDateString()} ${last}`).getTime()) / 60000;
-        if(isNaN(mins)||mins>15) doSync(true);
-      }
+      if(document.visibilityState!=='visible') return;
+      const url = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
+      if(!url) return;
+      const last = DB.get('lastSync','');
+      if(!last){ doSync(true); return; }
+      const mins = (Date.now() - new Date(`${new Date().toDateString()} ${last}`).getTime()) / 60000;
+      if(isNaN(mins) || mins > 15) doSync(true);
     }
     document.addEventListener('visibilitychange', onVisible);
     return ()=>document.removeEventListener('visibilitychange', onVisible);
@@ -4726,6 +4716,8 @@ function App(){
       DB.set('currentUser', user);
       setUnlocked(true);
       try{ sessionStorage.setItem('masama_unlocked','1'); }catch{}
+      // Sync inmediato al iniciar sesión
+      setTimeout(()=>doSync(true), 300);
     },
     scriptUrl,
   });
