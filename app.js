@@ -88,6 +88,18 @@ function calcEmpamEstado(fecha){
     return 'VIGENTE';
   }catch{ return 'PENDIENTE'; }
 }
+// Recalcula empamEstado y empamDias desde empamFecha usando la fecha actual.
+// Aplicar al cargar desde caché y tras cada sync para que las alertas sean siempre vigentes.
+function refreshEmpam(pacs){
+  const now = new Date();
+  return pacs.map(p=>{
+    if(!p.empamFecha) return p;
+    const empamEstado = calcEmpamEstado(p.empamFecha);
+    const raw = new Date(p.empamFecha);
+    const empamDias = isNaN(raw) ? null : Math.round((raw - now) / 86400000);
+    return {...p, empamEstado, empamDias};
+  });
+}
 function calcDias(fecha){
   if(!fecha) return null;
   try{ return Math.round((new Date(fecha)-TODAY)/86400000); }catch{ return null; }
@@ -743,9 +755,8 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
 // VIEW: PASAR LISTA
 // ─────────────────────────────────────────────────────────────────────
 function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,setSessionNotes,currentUser}){
-  const defaultTaller = (currentUser?.talleres||[])[0]||'';
-  const [step,setStep]=useState(defaultTaller?'fecha':'taller');
-  const [selTaller,setTaller]=useState(defaultTaller);
+  const [step,setStep]=useState('taller');
+  const [selTaller,setTaller]=useState('');
   const [selFecha,setFecha]=useState(todayISO());
   const [search,setSearch]=useState('');
   const [notePatient,setNotePatient]=useState(null);
@@ -4961,7 +4972,7 @@ function App(){
     try{ return sessionStorage.getItem('masama_unlocked')==='1'; }catch{ return false; }
   });
   const [view,setView]         = useState('inicio');
-  const [patients,setPatients] = useState(()=>DB.get('patients',[]));
+  const [patients,setPatients] = useState(()=>refreshEmpam(DB.get('patients',[])));
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
   const [sessionNotes,setSN]   = useState(()=>DB.get('sessionNotes',{}));
   const [sessionLog,setSL]     = useState(()=>DB.get('sessionLog',{}));
@@ -5021,13 +5032,10 @@ function App(){
       }
       if (data.status !== 'ok') throw new Error(data.message || 'Error del servidor');
 
-      let pacs = (data.pacientes || []).map(p => ({
+      let pacs = refreshEmpam((data.pacientes || []).map(p => ({
         ...p,
-        empamDias: p.empamFecha
-          ? Math.round((new Date(p.empamFecha) - new Date()) / 86400000)
-          : null,
         alertaAsist: (p.totalPresencias||0) < 20 ? 'BAJO' : 'OK',
-      }));
+      })));
 
       if (pacs.length > 0) {
         setPatients(pacs);
