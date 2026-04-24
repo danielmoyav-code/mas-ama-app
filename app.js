@@ -981,16 +981,39 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
         },'💬 WS todos')
       );
     })(),
-    // Save + Cola de citación
+    // Save + acciones sobre seleccionados
     React.createElement('div',{style:{marginTop:10,display:'flex',flexDirection:'column',gap:8}},
       React.createElement('button',{className:'btn btn-green',
         onClick:()=>toast(`💾 Lista guardada — ${present} presentes, ${absent} ausentes`)},
         '💾 Confirmar Lista'),
-      colaCitacion.length > 0 && React.createElement('button',{
-        className:'btn btn-primary',
-        onClick:()=>setShowCola(true),
-        style:{background:'#1A3A5C'}
-      },`🏥 Iniciar Cola de Citación (${colaCitacion.length} pacientes)`)
+
+      colaCitacion.length > 0 && React.createElement('div',{style:{display:'flex',gap:8}},
+        // WA masivo a seleccionados
+        React.createElement('button',{
+          style:{flex:1,padding:'12px',borderRadius:12,border:'none',
+                 background:'linear-gradient(90deg,#128C7E,#25D366)',
+                 color:'#fff',fontWeight:800,fontSize:14,cursor:'pointer'},
+          onClick:()=>{
+            const selPacs = tallerPacs.filter(p => colaCitacion.includes(p.id) && p.fono);
+            if(!selPacs.length){ toast('Sin teléfono registrado en los seleccionados'); return; }
+            selPacs.forEach((p,i)=>{
+              const tipo = p.empamEstado?.includes('VENCIDO')?'VENCIDO'
+                         :p.empamEstado?.includes('PRONTO')?'PRONTO':'PENDIENTE';
+              setTimeout(()=>{
+                window.open(`https://wa.me/56${p.fono.replace(/\D/g,'')}?text=${buildWspMsg(p,tipo)}`,'_blank');
+              }, i*700);
+            });
+            toast(`💬 Abriendo WA para ${selPacs.length} paciente${selPacs.length>1?'s':''}`);
+          }
+        },`💬 WA (${colaCitacion.length})`),
+
+        // Cola citación Rayen
+        React.createElement('button',{
+          style:{flex:1,padding:'12px',borderRadius:12,border:'none',
+                 background:'#1A3A5C',color:'#fff',fontWeight:800,fontSize:14,cursor:'pointer'},
+          onClick:()=>setShowCola(true)
+        },`🏥 Citar (${colaCitacion.length})`)
+      )
     ),
 
     // ── MODAL: COLA DE CITACIÓN ──────────────────────────────────────
