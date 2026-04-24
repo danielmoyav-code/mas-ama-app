@@ -618,7 +618,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
     // Sync indicator
     React.createElement(SyncIndicator,{
       status:syncStatus, lastSync, onSync:()=>doSync(false),
-      hasUrl:!!DB.get('scriptUrl','')
+      hasUrl:!!(DB.get('scriptUrl','')||SCRIPT_URL_EMBEDDED)
     }),
 
     // Banner EMPAM urgente: asistieron recientemente pero VENCIDO
@@ -2010,26 +2010,48 @@ function ViewExportar({patients,attendanceLog,toast}){
 // VIEW: CONFIGURACIÓN
 // ─────────────────────────────────────────────────────────────────────
 function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSession,onSync,scriptUrl,setScriptUrlProp}){
-  const [tab,setTab]       = useState('general');
-  const [urlInput,setUrl]  = useState(syncConfig?.url||'');
+  const [tab,setTab]       = useState('sync');
+  const [urlInput,setUrl]  = useState(()=>DB.get('scriptUrl','')||SCRIPT_URL_EMBEDDED||'');
   const [testing,setTest]  = useState(false);
+  const [diagResult,setDiag] = useState(null); // {ok, msg, pacs, raw}
 
   function saveUrl(){
-    const cfg = {...(syncConfig||{}), url:urlInput, enabled:!!urlInput};
+    const u = urlInput.trim();
+    const cfg = {...(syncConfig||{}), url:u, enabled:!!u};
     setSyncConfig(cfg);
-    if(setScriptUrlProp) setScriptUrlProp(urlInput);
-    toast(urlInput ? '✅ URL guardada — la app leerá tus archivos de Drive' : '⚠️ URL eliminada');
+    if(setScriptUrlProp) setScriptUrlProp(u);
+    DB.set('scriptUrl', u);
+    toast(u ? '✅ URL guardada' : '⚠️ URL eliminada');
   }
 
   async function testConnection(){
-    if(!urlInput){ toast('❌ Pega primero la URL del Apps Script'); return; }
-    setTest(true);
+    const u = (urlInput||'').trim() || SCRIPT_URL_EMBEDDED;
+    if(!u){ toast('❌ No hay URL configurada'); return; }
+    setTest(true); setDiag(null);
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 20000);
     try{
-      const r = await fetch(urlInput);
-      const j = await r.json();
-      if(j.status==='ok') toast('✅ Conexión exitosa con Google Sheets');
-      else toast('⚠️ Respondió pero con error: ' + (j.message||''));
-    } catch(e){ toast('❌ No se pudo conectar · Verifica la URL'); }
+      const r = await fetch(`${u}?action=all&t=${Date.now()}`, {
+        credentials:'omit', signal:controller.signal
+      });
+      clearTimeout(timer);
+      const text = await r.text();
+      let j;
+      try{ j = JSON.parse(text); }
+      catch{ setDiag({ok:false, msg:'Respuesta no es JSON', raw:text.slice(0,300)}); setTest(false); return; }
+      if(j.status==='ok'){
+        setDiag({ok:true, msg:`✅ OK — ${(j.pacientes||[]).length} pacientes`, pacs:(j.pacientes||[]).length});
+        toast(`✅ Conexión OK — ${(j.pacientes||[]).length} pacientes`);
+        // si el test OK, hacer sync real
+        if(onSync) onSync();
+      } else {
+        setDiag({ok:false, msg:'Error del servidor: '+(j.message||'desconocido'), raw:JSON.stringify(j).slice(0,300)});
+      }
+    } catch(e){
+      clearTimeout(timer);
+      const msg = e.name==='AbortError'?'Timeout 20s — sin respuesta':e.message;
+      setDiag({ok:false, msg, raw:''});
+    }
     setTest(false);
   }
 
@@ -2116,75 +2138,91 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
     // ── SYNC ─────────────────────────────────────────────────────────
     tab==='sync' && React.createElement('div',null,
 
-      // Info modo solo lectura
+      // Último error guardado
+      (()=>{
+        const le = DB.get('lastSyncError',null);
+        if(!le) return null;
+        return React.createElement('div',{style:{
+          background:'#FDEDEC',border:'1.5px solid #E74C3C',borderRadius:12,
+          padding:'12px 14px',marginBottom:12,fontSize:12
+        }},
+          React.createElement('div',{style:{fontWeight:800,color:'#C0392B',marginBottom:4}},'⚠️ Último error de sync'),
+          React.createElement('div',{style:{color:'#555',wordBreak:'break-all'}},le.msg),
+          React.createElement('div',{style:{color:'#999',marginTop:4}},new Date(le.ts).toLocaleString('es-CL'))
+        );
+      })(),
+
+      // Botón SINCRONIZAR AHORA — prominente
       React.createElement('div',{style:{
-        background:'#D5F5E3',border:'1.5px solid #1E8449',
-        borderRadius:12,padding:'14px 16px',marginBottom:12
+        background:'linear-gradient(135deg,#1A3A5C,#2471A3)',
+        borderRadius:16,padding:'18px 16px',marginBottom:12,textAlign:'center'
       }},
-        React.createElement('div',{style:{fontWeight:800,fontSize:15,color:'#1E8449',marginBottom:6}},
-          '🔒 Modo Solo Lectura'),
-        React.createElement('div',{style:{fontSize:13,color:'#555',lineHeight:1.6}},
-          'La app lee tus archivos de Drive sin modificar nada. ',
-          React.createElement('strong',null,'100% seguro — '),
-          'tus colegas no verán ningún cambio.')
+        React.createElement('div',{style:{color:'#fff',fontWeight:900,fontSize:16,marginBottom:4}},'☁️ Sincronización Manual'),
+        React.createElement('div',{style:{color:'rgba(255,255,255,.75)',fontSize:12,marginBottom:14}},
+          `Pacientes en memoria: ${patients.length} · Última sync: ${DB.get('lastSync','nunca')}`),
+        React.createElement('button',{
+          onClick: testConnection,
+          disabled: testing,
+          style:{
+            background:'#fff',color:'#1A3A5C',border:'none',
+            borderRadius:12,padding:'12px 28px',fontWeight:900,fontSize:15,
+            cursor:testing?'not-allowed':'pointer',width:'100%',
+            opacity:testing?.7:1
+          }
+        }, testing ? '⏳ Probando conexión...' : '🔄 Sincronizar ahora')
       ),
 
-      // Estado
-      React.createElement('div',{className:'card',style:{
-        background: syncConfig?.enabled ? '#EBF5FB' : '#FEF9E7',
-        border:`1.5px solid ${syncConfig?.enabled ? '#2471A3' : '#F4D03F'}`
+      // Resultado del diagnóstico
+      diagResult && React.createElement('div',{style:{
+        background: diagResult.ok?'#D5F5E3':'#FDEDEC',
+        border:`1.5px solid ${diagResult.ok?'#1E8449':'#E74C3C'}`,
+        borderRadius:12, padding:'12px 14px', marginBottom:12
       }},
-        React.createElement('div',{style:{fontWeight:800,fontSize:14,marginBottom:4}},
-          syncConfig?.enabled ? '✅ Script configurado' : '⚠️ Sin configurar'),
-        React.createElement('div',{style:{fontSize:12,color:'#555',lineHeight:1.5}},
-          syncConfig?.enabled
-            ? 'La app leerá los datos actualizados de tus archivos en Drive.'
-            : 'Configura el script para que la app lea tus archivos.')
+        React.createElement('div',{style:{fontWeight:800,fontSize:14,
+          color:diagResult.ok?'#1E8449':'#C0392B',marginBottom:diagResult.raw?8:0}},
+          diagResult.msg),
+        diagResult.raw && React.createElement('div',{style:{
+          fontSize:11,color:'#666',fontFamily:'monospace',
+          wordBreak:'break-all',background:'rgba(0,0,0,.04)',
+          borderRadius:8,padding:'6px 8px',marginTop:4,
+          maxHeight:120,overflowY:'auto'
+        }}, diagResult.raw)
       ),
 
-      // Instrucciones claras
+      // URL del script
       React.createElement('div',{className:'card'},
-        React.createElement('div',{className:'card-title'},'📋 Cómo configurar — 3 pasos'),
-        [
-          '1. Abre tu Google Apps Script (el que ya tienes configurado)',
-          '2. Reemplaza el código con el nuevo apps_script_v8.js',
-          '3. Implementa nueva versión → copia la URL y pégala abajo',
-        ].map((s,i)=>React.createElement('div',{key:i,style:{
-          fontSize:13,padding:'8px 0',borderBottom:'1px solid #f0f0f0',
-          color:'#444',lineHeight:1.5
-        }},`${i+1}. ${s.slice(3)}`)
-      )),
-
-      // URL input
-      React.createElement('div',{className:'card'},
-        React.createElement('div',{className:'card-title'},'URL del Apps Script'),
-        React.createElement(Field,{label:'Pega aquí la URL'},
-          React.createElement('input',{
-            type:'url', value:urlInput,
-            onChange:e=>setUrl(e.target.value),
-            placeholder:'https://script.google.com/macros/s/...',
-          })
-        ),
-        React.createElement('div',{className:'btn-row'},
+        React.createElement('div',{className:'card-title'},'🔗 URL del Apps Script'),
+        React.createElement('div',{style:{fontSize:12,color:'#666',marginBottom:8,lineHeight:1.5}},
+          'La URL ya está embebida en la app. Solo cámbiala si redespliegaste con una URL distinta.'),
+        React.createElement('textarea',{
+          value:urlInput,
+          onChange:e=>setUrl(e.target.value),
+          rows:3,
+          style:{width:'100%',boxSizing:'border-box',borderRadius:10,border:'1px solid #ddd',
+                 padding:8,fontSize:11,fontFamily:'monospace',resize:'vertical'},
+          placeholder:'https://script.google.com/macros/s/...'
+        }),
+        React.createElement('div',{style:{display:'flex',gap:8,marginTop:8}},
           React.createElement('button',{
-            className:'btn btn-ghost btn-sm',style:{flex:1},
-            onClick:testConnection, disabled:testing
-          }, testing?'Probando...':'🔌 Probar'),
+            className:'btn btn-ghost',style:{flex:1,fontSize:13},
+            onClick:()=>{ setUrl(SCRIPT_URL_EMBEDDED); toast('URL restaurada al valor embebido'); }
+          },'↺ Restaurar'),
           React.createElement('button',{
-            className:'btn btn-primary btn-sm',style:{flex:2},
+            className:'btn btn-primary',style:{flex:2,fontSize:13},
             onClick:saveUrl
           },'💾 Guardar URL')
         )
       ),
 
-      // Botón actualizar datos
-      syncConfig?.enabled && React.createElement('div',{className:'card'},
-        React.createElement('div',{className:'card-title'},'📥 Actualizar datos'),
-        React.createElement('p',{style:{fontSize:13,color:'#777',marginBottom:12,lineHeight:1.5}},
-          'Lee los archivos de Gestión y Asistencia desde Drive y actualiza la app.'),
-        React.createElement('button',{className:'btn btn-primary',
-          onClick:()=>onSync&&onSync()
-        },'🔄 Actualizar desde Drive ahora')
+      // Info técnica
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'ℹ️ Información'),
+        React.createElement('div',{style:{fontSize:12,color:'#555',lineHeight:1.7}},
+          '• La sync lee Google Sheets sin modificar nada',React.createElement('br'),
+          '• Funciona con WiFi y datos móviles',React.createElement('br'),
+          '• Si falla, la app usa los datos del último sync',React.createElement('br'),
+          '• Presiona "Sincronizar ahora" después de cada sesión'
+        )
       )
     ),
 
@@ -4372,34 +4410,37 @@ function PINScreen({ onUnlock }) {
 }
 
 function SyncIndicator({ status, lastSync, onSync, hasUrl }) {
-  if (!hasUrl) return React.createElement('div',{
-    style:{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',
-      background:'#FEF9E7',borderRadius:10,marginBottom:10,
-      boxShadow:'0 1px 6px rgba(0,0,0,.06)',cursor:'pointer'},
-    onClick:onSync
-  },
-    React.createElement('span',{style:{fontSize:13}},'⚙️'),
-    React.createElement('span',{style:{fontSize:12,color:'#7A5C00',flex:1}},
-      'Configura el script en Config para ver datos en tiempo real'),
-    React.createElement('span',{style:{fontSize:11,color:'#2471A3',fontWeight:700}},'Configurar')
-  );
+  const isSyncing = status === 'syncing';
+  const isError   = status === 'error';
 
-  const configs = {
-    idle:    { dot:'ok',      text: lastSync ? `Actualizado: ${lastSync}` : 'Listo para actualizar', icon:'☁️' },
-    syncing: { dot:'loading', text: 'Leyendo archivos de Drive...', icon:'🔄' },
-    ok:      { dot:'ok',      text: `Actualizado: ${lastSync}`, icon:'✅' },
-    error:   { dot:'err',     text: 'Error al leer Drive — toca para reintentar', icon:'⚠️' },
-  };
-  const cfg = configs[status] || configs.idle;
+  const bg    = isError ? '#FDEDEC' : isSyncing ? '#EBF5FB' : '#EAF6F6';
+  const color = isError ? '#C0392B' : isSyncing ? '#1A5276' : '#0E6655';
+  const icon  = isSyncing ? '🔄' : isError ? '⚠️' : '✅';
+  const text  = isSyncing ? 'Sincronizando...'
+              : isError   ? 'Error — toca para reintentar'
+              : lastSync  ? `Sync: ${lastSync}`
+              : 'Toca para sincronizar';
+
   return React.createElement('div', {
-    style:{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',
-      background:'#fff',borderRadius:10,marginBottom:10,
-      boxShadow:'0 1px 6px rgba(0,0,0,.06)',cursor:'pointer'},
-    onClick:onSync,
+    onClick: !isSyncing ? onSync : undefined,
+    style:{
+      display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
+      background:bg, borderRadius:12, marginBottom:10,
+      boxShadow:'0 1px 6px rgba(0,0,0,.06)',
+      cursor: isSyncing ? 'default' : 'pointer',
+      border:`1.5px solid ${isError?'#E74C3C':isSyncing?'#AED6F1':'#A9DFBF'}`,
+    }
   },
-    React.createElement('div',{className:`sync-dot ${cfg.dot}`}),
-    React.createElement('span',{style:{fontSize:12,color:'#555',flex:1}},`${cfg.icon} ${cfg.text}`),
-    React.createElement('span',{style:{fontSize:11,color:'#2471A3',fontWeight:700}},'Actualizar')
+    React.createElement('span',{style:{fontSize:20, animation:isSyncing?'spin .8s linear infinite':undefined}}, icon),
+    React.createElement('div',{style:{flex:1,minWidth:0}},
+      React.createElement('div',{style:{fontSize:12,fontWeight:700,color}}, text),
+      isError && React.createElement('div',{style:{fontSize:11,color:'#999',marginTop:2}},
+        (DB.get('lastSyncError',{}).msg||'').slice(0,60))
+    ),
+    !isSyncing && React.createElement('span',{style:{
+      fontSize:11,color:'#2471A3',fontWeight:800,
+      background:'rgba(36,113,163,.1)',borderRadius:20,padding:'3px 8px'
+    }},'🔄 Sync')
   );
 }
 
@@ -4956,14 +4997,29 @@ function App(){
     const url = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
     if (!url) { if(!silent) toast('⚙️ Ve a Config y configura la URL del script'); return; }
     setSyncSt('syncing');
-    try {
-      const res = await fetch(`${url}?action=all&t=${Date.now()}`);
-      if(!res.ok) throw new Error('Error de red ' + res.status);
-      const data = await res.json();
-      if(data.status !== 'ok') throw new Error(data.message||'Respuesta inesperada del servidor');
 
-      // El script ya entrega los datos cruzados y calculados.
-      // Solo añadimos empamDias localmente (depende de la fecha de hoy).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000); // 25s timeout
+
+    try {
+      const res = await fetch(`${url}?action=all&t=${Date.now()}`, {
+        credentials: 'omit',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Leer como texto primero para diagnosticar respuestas no-JSON (ej: página de login)
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch {
+        const preview = text.slice(0, 120).replace(/\s+/g,' ');
+        throw new Error(`Respuesta inesperada: ${preview}`);
+      }
+      if (data.status !== 'ok') throw new Error(data.message || 'Error del servidor');
+
       let pacs = (data.pacientes || []).map(p => ({
         ...p,
         empamDias: p.empamFecha
@@ -4972,7 +5028,7 @@ function App(){
         alertaAsist: (p.totalPresencias||0) < 20 ? 'BAJO' : 'OK',
       }));
 
-      if(pacs.length > 0) {
+      if (pacs.length > 0) {
         setPatients(pacs);
         DB.set('patients', pacs);
       }
@@ -4980,12 +5036,16 @@ function App(){
       const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
       setLastSync(now); DB.set('lastSync',now);
       setSyncSt('ok');
-      if(!silent) toast(`✅ ${pacs.length} pacientes actualizados`);
+      if (!silent) toast(`✅ ${pacs.length} pacientes sincronizados`);
       setTimeout(()=>setSyncSt('idle'),3000);
+
     } catch(e) {
+      clearTimeout(timer);
+      const msg = e.name==='AbortError' ? 'Sin respuesta en 25s (revisa conexión)' : (e.message||'Sin conexión');
       setSyncSt('error');
-      if(!silent) toast('❌ ' + (e.message || 'Sin conexión') + ' — datos guardados');
-      else console.warn('[doSync error]', e.message);
+      DB.set('lastSyncError', { msg, ts: new Date().toISOString() });
+      if (!silent) toast(`❌ ${msg}`);
+      else console.warn('[doSync]', msg);
       setTimeout(()=>setSyncSt('idle'),5000);
     }
   }
