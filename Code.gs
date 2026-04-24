@@ -215,7 +215,7 @@ function normTaller(raw) {
   if (d.includes('SALITRE'))      return 'VILLA EL SALITRE';
   if (d.includes('CUMBRES'))      return 'CUMBRES ANDINAS';
   if (d.includes('NUEVA VIDA'))   return 'NUEVA VIDA';
-  if (d.includes('FUNDACI'))      return 'LA FUNDACION';
+  if (d.includes('FUNDACI'))      return 'LA FUNDACIÓN';
   if (d.includes('SAN SEBAS'))    return 'SAN SEBASTIAN';
   if (d.includes('EXPERIENCIA'))  return 'EXPERIENCIA Y JUVENTUD';
   if (d.includes('ETERNA') || d.includes('CAPILLA') || d.includes('JUVENTUD')) return 'EXPERIENCIA Y JUVENTUD';

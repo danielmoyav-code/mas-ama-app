@@ -608,7 +608,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
         )
       ),
 
-      React.createElement('h2',null,`${saludo}, ${currentUser?.nombre||'equipo'} 👋`),
+      React.createElement('h2',null,`${saludo}, ${currentUser?.displayNombre||currentUser?.nombre||'equipo'} 👋`),
       React.createElement('p',null,`${total} pacientes · ${new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})}`),
 
       // Barra de energía animada
@@ -2974,6 +2974,309 @@ function SesionHistorialCard({ sesion, onPress }) {
   );
 }
 
+// ── TEMÁTICAS COGNITIVAS ──────────────────────────────────────────────
+const TEMATICAS_COGNITIVAS = [
+  {
+    id: 'memoria',
+    icon: '🧠',
+    nombre: 'Memoria',
+    color: '#7030A0',
+    objetivo: 'Estimular la memoria episódica, semántica y de trabajo mediante ejercicios de evocación, asociación y repetición espaciada.',
+    pildora: 'La memoria se ejercita con el uso. Recordar historias, listas y caras activa las mismas redes que protegen contra el deterioro cognitivo.',
+    doble_tarea: 'Recordar una lista de 5 compras mientras cuenta pasos en el lugar.',
+    ejercicios: [
+      { id:'m01', nombre:'Lista de palabras', desc:'Leer 8 palabras en voz alta. Tras 2 minutos de otra actividad, recordarlas sin ayuda. Puntuar 1 pt por palabra.', dos:'2 rondas · 8 palabras c/u' },
+      { id:'m02', nombre:'Historia encadenada', desc:'Cada participante agrega una oración a un cuento colectivo. Al final, el grupo reconstruye el cuento completo en orden.', dos:'1 ronda grupal · 5-8 min' },
+      { id:'m03', nombre:'Memoria de caras', desc:'Mostrar 6 fotos de personas con su nombre. Tapar los nombres y preguntar quién es quién. Rotar roles.', dos:'3 intentos · 6 fotos' },
+      { id:'m04', nombre:'Qué cambió', desc:'Presentar una bandeja con 10 objetos. Cubrir y retirar 2 objetos. Los participantes identifican qué falta.', dos:'3 rondas · 10 objetos' },
+      { id:'m05', nombre:'Evocación autobiográfica', desc:'Cada participante comparte un recuerdo de su niñez ligado a una estación del año. El grupo formula 2 preguntas al narrador.', dos:'5 min por participante' },
+    ],
+  },
+  {
+    id: 'atencion',
+    icon: '🎯',
+    nombre: 'Atención y Concentración',
+    color: '#C00000',
+    objetivo: 'Fortalecer la atención sostenida, selectiva y dividida para mejorar el desempeño en actividades de la vida diaria.',
+    pildora: 'La atención es el filtro de la mente. Entrenarla con tareas de selección y secuencias reduce errores cotidianos y mejora la seguridad en el hogar.',
+    doble_tarea: 'Palmear la mesa cada vez que se escuche un número par mientras el monitor lee una lista de números.',
+    ejercicios: [
+      { id:'a01', nombre:'Busca la letra', desc:'Entregar una hoja con texto. Subrayar todas las letras "A" en 60 segundos. Registrar aciertos y omisiones.', dos:'3 min · 3 filas de texto' },
+      { id:'a02', nombre:'Semáforo de colores', desc:'Asignar acciones a colores (rojo=aplaudir, verde=pararse, amarillo=silencio). Monitor muestra tarjetas al azar.', dos:'5 min · ritmo creciente' },
+      { id:'a03', nombre:'Secuencia de palmas', desc:'Monitor marca un ritmo de palmas. Grupo lo repite. Aumentar complejidad (ritmo + golpe de mesa).', dos:'3 rondas · +1 elemento por ronda' },
+      { id:'a04', nombre:'Stroop de palabras', desc:'Leer en voz alta el COLOR de la tinta (no la palabra escrita). Ej: "ROJO" escrito en azul → decir "azul".', dos:'10 tarjetas · 2 intentos' },
+      { id:'a05', nombre:'Contar al revés', desc:'Contar hacia atrás desde 20. Luego desde 50 de 3 en 3. Cronometrar y registrar errores.', dos:'3 series · dificultad progresiva' },
+    ],
+  },
+  {
+    id: 'lenguaje',
+    icon: '💬',
+    nombre: 'Lenguaje y Vocabulario',
+    color: '#2471A3',
+    objetivo: 'Mantener la fluidez verbal, el acceso léxico y la comprensión del lenguaje oral y escrito.',
+    pildora: 'El vocabulario activo disminuye con la edad si no se usa. Hablar, leer en voz alta y encontrar palabras nuevas son el mejor gimnasio del lenguaje.',
+    doble_tarea: 'Nombrar animales con la letra "P" mientras se realiza marcha estática.',
+    ejercicios: [
+      { id:'le01', nombre:'Fluidez semántica', desc:'En 60 segundos nombrar todos los animales que recuerden. Luego con otra categoría: frutas, colores, profesiones.', dos:'3 categorías · 60 seg c/u' },
+      { id:'le02', nombre:'Definir palabras', desc:'Monitor dice una palabra (ej: "semáforo"). El participante la define sin usar la palabra. Resto adivina.', dos:'5 palabras por ronda' },
+      { id:'le03', nombre:'Completa el refrán', desc:'Monitor dice la primera mitad de un refrán chileno. El grupo completa. Comentar el significado.', dos:'8-10 refranes' },
+      { id:'le04', nombre:'Cadena de palabras', desc:'El primero dice una palabra. El siguiente dice una que empiece con la última sílaba de la anterior. Sin repetir.', dos:'2 rondas grupales · 5 min' },
+      { id:'le05', nombre:'Narrar imagen', desc:'Mostrar una lámina con una escena cotidiana. Cada participante describe qué ve y qué cree que pasa.', dos:'2 láminas · 3 min c/u' },
+    ],
+  },
+  {
+    id: 'orientacion',
+    icon: '🗓️',
+    nombre: 'Orientación Témporospacial',
+    color: '#17A589',
+    objetivo: 'Reforzar la orientación en tiempo y espacio mediante actividades contextualizadas en la vida cotidiana y el entorno cercano.',
+    pildora: 'Saber dónde estamos y qué día es hoy nos ancla a la realidad. Practicarlo diariamente con referentes concretos (clima, noticias, eventos) es tan efectivo como cualquier test formal.',
+    doble_tarea: 'Ordenar eventos de la semana mientras se recuerdan los meses del año en orden.',
+    ejercicios: [
+      { id:'o01', nombre:'Ronda de orientación', desc:'¿Qué día es hoy? ¿Qué mes? ¿En qué estación estamos? ¿Qué pasó ayer en Chile? Ronda grupal, cada uno responde una pregunta.', dos:'Inicio de cada sesión · 5 min' },
+      { id:'o02', nombre:'Mapa del barrio', desc:'Dibujar juntos en papel el recorrido desde sus casas al CESFAM. Identificar referencias: supermercado, plaza, farmacia.', dos:'1 dibujo colectivo · 10 min' },
+      { id:'o03', nombre:'Secuencia de eventos', desc:'Dar 6 tarjetas con eventos cotidianos (despertarse, almorzar, dormir, etc.) desordenadas. Ordenarlas en secuencia lógica.', dos:'2 secuencias · 5 min' },
+      { id:'o04', nombre:'¿Qué estación es?', desc:'Monitor describe características del tiempo y el entorno. El grupo identifica la estación del año y da 3 razones.', dos:'3 descripciones distintas' },
+      { id:'o05', nombre:'Línea de tiempo personal', desc:'Cada participante ubica 3 eventos importantes de su vida en una línea de tiempo en el pizarrón. El grupo hace preguntas.', dos:'5 min por participante' },
+    ],
+  },
+  {
+    id: 'ejecutivo',
+    icon: '⚙️',
+    nombre: 'Funciones Ejecutivas',
+    color: '#D68910',
+    objetivo: 'Entrenar la planificación, flexibilidad cognitiva, inhibición y toma de decisiones en situaciones cotidianas.',
+    pildora: 'Las funciones ejecutivas son el director de orquesta del cerebro. Planificar una comida, seguir una receta o jugar ajedrez las activan tanto como los tests neuropsicológicos.',
+    doble_tarea: 'Planificar los pasos de una receta mientras se cuenta de 2 en 2 en voz alta.',
+    ejercicios: [
+      { id:'e01', nombre:'Planificar una salida', desc:'En grupo, planificar cómo ir desde el CESFAM a la Plaza de Armas de Macul: transporte, tiempo, qué llevar. Exponer el plan.', dos:'10 min planificación + 5 min exposición' },
+      { id:'e02', nombre:'Categorizar objetos', desc:'Presentar 12 tarjetas de objetos variados. El grupo los agrupa según categorías propias (no sugeridas). Justificar criterio.', dos:'2 rondas con distintos objetos' },
+      { id:'e03', nombre:'Solución de problemas', desc:'Plantear un problema cotidiano: "Se cortó la luz en casa ¿qué hago?". El grupo propone pasos en orden de prioridad.', dos:'2 situaciones · 7 min c/u' },
+      { id:'e04', nombre:'Inhibición: Simón dice NO', desc:'El monitor da instrucciones. El grupo solo obedece si NO dice "Simón dice". Versión inversa del clásico.', dos:'5 min · ritmo creciente' },
+      { id:'e05', nombre:'Flexibilidad: reglas cambiantes', desc:'Contar objetos rojos en una imagen. Al silbar, cambiar a objetos redondos. Al aplaudir, a objetos grandes. En 3 min.', dos:'3 cambios de regla por ronda' },
+    ],
+  },
+  {
+    id: 'visuoespacial',
+    icon: '👁️',
+    nombre: 'Habilidades Visuoespaciales',
+    color: '#1A5276',
+    objetivo: 'Estimular el reconocimiento de formas, patrones y relaciones espaciales para apoyar la autonomía en desplazamiento y AVD.',
+    pildora: 'Ver, reconocer y orientarse en el espacio involucra regiones del cerebro que también participan en la memoria. Ejercitar la percepción visual es prevención activa del deterioro.',
+    doble_tarea: 'Completar un rompecabezas mientras se nombran países de América del Sur en voz alta.',
+    ejercicios: [
+      { id:'v01', nombre:'Rompecabezas grupal', desc:'Armar un rompecabezas de 24-48 piezas entre todos. Identificar estrategias: bordes primero, colores, formas.', dos:'15 min · rompecabezas temático' },
+      { id:'v02', nombre:'Copia de figura', desc:'Mostrar una figura geométrica compuesta. Cada participante la reproduce en papel sin trazar. Comparar resultados.', dos:'3 figuras · 3 min c/u' },
+      { id:'v03', nombre:'¿Qué es diferente?', desc:'Mostrar dos imágenes casi idénticas. El grupo identifica las 5 diferencias. Señalar y describir cada una.', dos:'2 pares de imágenes · 5 min c/u' },
+      { id:'v04', nombre:'Laberintos', desc:'Cada participante resuelve un laberinto de dificultad media. Comparar rutas elegidas y discutir estrategias.', dos:'2 laberintos distintos' },
+      { id:'v05', nombre:'Origami simple', desc:'Guiar al grupo en un pliegue básico (barco, estrella). Seguir instrucciones verbales SIN mostrar el resultado final.', dos:'1 figura · instrucciones paso a paso' },
+    ],
+  },
+];
+
+// ═══════════════════════════════════════════════════════════════════════
+//  VIEW: RUTINAS COGNITIVAS (Terapia Ocupacional)
+// ═══════════════════════════════════════════════════════════════════════
+function ViewRutinasCognitivas({ sessionLog, setSessionLog, toast }) {
+  const [tab, setTab]          = useState('registrar');
+  const [selTaller, setTaller] = useState('');
+  const [selFecha, setFecha]   = useState(todayISO());
+  const [selTematica, setTema] = useState(null);
+  const [notas, setNotas]      = useState('');
+  const [detailSesion, setDetail] = useState(null);
+
+  const currentKey = selTaller && selFecha ? `cog_sesion||${selTaller}||${selFecha}` : null;
+
+  useEffect(() => {
+    if (currentKey && sessionLog?.[currentKey]) {
+      const ex = sessionLog[currentKey];
+      setTema(TEMATICAS_COGNITIVAS.find(t => t.id === ex.tematicaId) || null);
+      setNotas(ex.notas || '');
+    } else {
+      setTema(null); setNotas('');
+    }
+  }, [selTaller, selFecha]);
+
+  const historial = Object.entries(sessionLog || {})
+    .filter(([k]) => k.startsWith('cog_sesion||'))
+    .map(([,v]) => v)
+    .filter(s => s.tematicaId)
+    .sort((a,b) => b.fecha.localeCompare(a.fecha));
+
+  const ultimaTemPorTaller = {};
+  historial.forEach(s => {
+    if (!ultimaTemPorTaller[s.taller]) ultimaTemPorTaller[s.taller] = s.tematicaId;
+  });
+
+  function guardar() {
+    if (!selTaller || !selFecha || !selTematica) {
+      toast('❌ Selecciona taller, fecha y temática'); return;
+    }
+    const next = { ...(sessionLog||{}), [currentKey]: {
+      taller: selTaller, fecha: selFecha,
+      tematicaId: selTematica.id,
+      tematicaNombre: selTematica.nombre,
+      notas, savedAt: new Date().toISOString()
+    }};
+    setSessionLog(next); DB.set('sessionLog', next);
+    toast(`💾 Sesión guardada — ${selTematica.icon} ${selTematica.nombre}`);
+    setTab('historial');
+  }
+
+  // Tab registrar
+  const tabRegistrar = React.createElement('div', null,
+    React.createElement('div', { className:'card' },
+      React.createElement('div', { className:'card-title' }, '📅 Sesión cognitiva'),
+      React.createElement(Field, { label:'Taller / Club' },
+        React.createElement('select', { value:selTaller, onChange:e=>setTaller(e.target.value) },
+          React.createElement('option', { value:'' }, '— Selecciona el taller —'),
+          TALLERES.map(t => React.createElement('option', { key:t, value:t }, t))
+        )
+      ),
+      React.createElement(Field, { label:'Fecha' },
+        React.createElement('input', { type:'date', value:selFecha, onChange:e=>setFecha(e.target.value) })
+      ),
+      selTaller && ultimaTemPorTaller[selTaller] && React.createElement('div', {
+        style:{ background:'#F3E9FF', borderRadius:10, padding:'8px 12px', fontSize:13, color:'#5A006A', lineHeight:1.5 }
+      },
+        '🔄 Última actividad en este taller: ',
+        React.createElement('strong', null,
+          TEMATICAS_COGNITIVAS.find(t=>t.id===ultimaTemPorTaller[selTaller])?.nombre || ultimaTemPorTaller[selTaller]
+        )
+      )
+    ),
+
+    // Selector de temática cognitiva
+    React.createElement('div', { className:'card' },
+      React.createElement('div', { className:'card-title' }, '🧩 Área a trabajar hoy'),
+      React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 } },
+        TEMATICAS_COGNITIVAS.map(t => React.createElement('button', {
+          key:t.id,
+          onClick:()=>setTema(selTematica?.id===t.id?null:t),
+          style:{
+            background: selTematica?.id===t.id ? t.color : '#f7f7fa',
+            color: selTematica?.id===t.id ? '#fff' : '#333',
+            border:`2px solid ${selTematica?.id===t.id?t.color:'#e0e0e0'}`,
+            borderRadius:14, padding:'14px 8px',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:6,
+            cursor:'pointer', fontSize:13, fontWeight:700, transition:'all .2s'
+          }
+        },
+          React.createElement('span', { style:{fontSize:26} }, t.icon),
+          t.nombre
+        ))
+      )
+    ),
+
+    // Detalle de la temática seleccionada
+    selTematica && React.createElement('div', { className:'card' },
+      React.createElement('div', { style:{
+        background:selTematica.color, borderRadius:12, padding:'14px 16px',
+        color:'#fff', marginBottom:12
+      }},
+        React.createElement('div', { style:{fontSize:28, marginBottom:4} }, selTematica.icon),
+        React.createElement('div', { style:{fontWeight:900, fontSize:17} }, selTematica.nombre),
+        React.createElement('div', { style:{fontSize:12, opacity:.9, marginTop:4} }, selTematica.objetivo)
+      ),
+      React.createElement('div', { style:{
+        background:'#F3E9FF', borderRadius:10, padding:'10px 14px',
+        fontSize:12, color:'#5A006A', marginBottom:12, lineHeight:1.6
+      }},
+        React.createElement('strong', null, '💡 Para tener en cuenta: '), selTematica.pildora
+      ),
+      React.createElement('div', { style:{
+        background:'#E8F4FF', borderRadius:10, padding:'10px 14px',
+        fontSize:12, color:'#154360', marginBottom:14, lineHeight:1.6
+      }},
+        React.createElement('strong', null, '🎯 Doble tarea sugerida: '), selTematica.doble_tarea
+      ),
+      React.createElement('div', { style:{fontWeight:700, fontSize:13, marginBottom:8, color:'#333'} },
+        '📋 Actividades de hoy:'
+      ),
+      selTematica.ejercicios.map(ej => React.createElement('div', {
+        key:ej.id,
+        style:{
+          background:'#fafafa', border:'1px solid #e8e8e8', borderRadius:10,
+          padding:'10px 14px', marginBottom:8
+        }
+      },
+        React.createElement('div', { style:{fontWeight:700, fontSize:13, marginBottom:3} }, ej.nombre),
+        React.createElement('div', { style:{fontSize:12, color:'#555', marginBottom:4, lineHeight:1.5} }, ej.desc),
+        React.createElement('div', { style:{
+          display:'inline-block', background:'#E8F4FF', borderRadius:20,
+          padding:'2px 10px', fontSize:11, color:'#1A3A5C', fontWeight:700
+        }}, ej.dos)
+      ))
+    ),
+
+    // Notas
+    React.createElement('div', { className:'card' },
+      React.createElement('div', { className:'card-title' }, '📝 Notas de la sesión'),
+      React.createElement('textarea', {
+        value:notas, onChange:e=>setNotas(e.target.value),
+        placeholder:'Observaciones del grupo, logros, dificultades, sugerencias...',
+        rows:4, style:{ width:'100%', boxSizing:'border-box', borderRadius:10, border:'1px solid #ddd', padding:10, fontSize:13 }
+      })
+    ),
+    React.createElement('button', {
+      className:'btn btn-primary', onClick:guardar,
+      style:{ width:'100%', marginTop:4 }
+    }, '💾 Guardar sesión cognitiva')
+  );
+
+  // Tab historial
+  const tabHistorial = historial.length === 0
+    ? React.createElement('div', { className:'card', style:{textAlign:'center', color:'#999', padding:32} },
+        React.createElement('div', { style:{fontSize:40, marginBottom:8} }, '🧠'),
+        'Sin sesiones cognitivas registradas aún.'
+      )
+    : React.createElement('div', null, historial.map((s,i) => {
+        const tema = TEMATICAS_COGNITIVAS.find(t=>t.id===s.tematicaId);
+        const isOpen = detailSesion === i;
+        return React.createElement('div', { key:i, className:'card', style:{marginBottom:8} },
+          React.createElement('div', {
+            onClick:()=>setDetail(isOpen?null:i),
+            style:{ display:'flex', alignItems:'center', gap:10, cursor:'pointer' }
+          },
+            React.createElement('div', { style:{
+              width:42, height:42, borderRadius:12, flexShrink:0,
+              background:tema?.color||'#7030A0', display:'flex',
+              alignItems:'center', justifyContent:'center', fontSize:20
+            }}, tema?.icon||'🧩'),
+            React.createElement('div', { style:{flex:1, minWidth:0} },
+              React.createElement('div', { style:{fontWeight:700, fontSize:13} }, s.tematicaNombre),
+              React.createElement('div', { style:{fontSize:12, color:'#777'} }, `${s.taller} · ${formatDate(s.fecha)}`)
+            ),
+            React.createElement('div', { style:{fontSize:18, color:'#aaa'} }, isOpen?'▲':'▼')
+          ),
+          isOpen && s.notas && React.createElement('div', {
+            style:{ marginTop:10, paddingTop:10, borderTop:'1px solid #f0f0f0',
+                    fontSize:13, color:'#555', fontStyle:'italic', lineHeight:1.6 }
+          }, `"${s.notas.slice(0,120)}${s.notas.length>120?'...':''}"`
+          )
+        );
+      })
+    );
+
+  return React.createElement('div', { className:'page' },
+    // Tabs
+    React.createElement('div', { style:{
+      display:'flex', gap:8, marginBottom:16, background:'#f4f4f8', borderRadius:12, padding:4
+    }},
+      ['registrar','historial'].map(t => React.createElement('button', {
+        key:t, onClick:()=>setTab(t),
+        style:{
+          flex:1, padding:'8px 0', borderRadius:9, border:'none', cursor:'pointer',
+          fontWeight:700, fontSize:13, transition:'all .2s',
+          background: tab===t ? '#7030A0' : 'transparent',
+          color: tab===t ? '#fff' : '#666',
+        }
+      }, t==='registrar' ? '🧩 Registrar' : '📋 Historial'))
+    ),
+    tab==='registrar' ? tabRegistrar : tabHistorial
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  VIEW: RUTINAS (Registro por Taller - Uso Personal)
 // ═══════════════════════════════════════════════════════════════════════
@@ -3879,11 +4182,11 @@ const ROLES = { JEFE: 'jefe', KINE: 'kine' };
 
 const USUARIOS_DEFAULT = [
   { nombre:'DANIEL',  email:'daniel.moyav@gmail.com', rol:ROLES.JEFE, color:'#C00000', pin:'1234', talleres:[] },
-  { nombre:'SILVANA', email:'silvana@cesfam.cl',       rol:ROLES.KINE, color:'#8E44AD', pin:'2222',
+  { nombre:'SILVANA', displayNombre:'Silvana', tipoRutinas:'cognitivo', email:'silvana@cesfam.cl', rol:ROLES.KINE, color:'#8E44AD', pin:'2222',
     talleres:['VM 2.0','VILLA EL SALITRE','CUMBRES ANDINAS','NUEVA VIDA','LA FUNDACIÓN','SAN SEBASTIAN','EXPERIENCIA Y JUVENTUD'] },
   { nombre:'JORGE',   email:'jorge@cesfam.cl',         rol:ROLES.KINE, color:'#2471A3', pin:'3333',
     talleres:['UV19 AM27','UV18','VILLA MACUL M-J'] },
-  { nombre:'ANITA',   email:'anita@cesfam.cl',         rol:ROLES.KINE, color:'#17A589', pin:'4444',
+  { nombre:'ANITA',   displayNombre:'Ani', tipoRutinas:'cognitivo', email:'anita@cesfam.cl', rol:ROLES.KINE, color:'#17A589', pin:'4444',
     talleres:['UV19 PM','VILLA EL SALITRE','LA FUNDACIÓN'] },
   { nombre:'GONZALO', email:'gonzalo@cesfam.cl',       rol:ROLES.KINE, color:'#D68910', pin:'5555',
     talleres:['UV19 PM'] },
@@ -4342,8 +4645,8 @@ function LoginScreen({ onLogin, usuarios }) {
           background:'rgba(255,255,255,.2)',
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:20, fontWeight:900,
-        } }, u.nombre[0]),
-        React.createElement('div', { style: { fontWeight:800, fontSize:14 } }, u.nombre)
+        } }, (u.displayNombre||u.nombre)[0]),
+        React.createElement('div', { style: { fontWeight:800, fontSize:14 } }, u.displayNombre||u.nombre)
       ))
     )
   );
@@ -4632,7 +4935,13 @@ function App(){
     return '';
   });
   const [autoSync]             = useState(()=>DB.get('autoSync',{url:DB.get('scriptUrl',''),enabled:!!DB.get('scriptUrl','')}));
-  const [currentUser,setCurrentUser] = useState(()=>DB.get('currentUser',null));
+  const [currentUser,setCurrentUser] = useState(()=>{
+    const stored = DB.get('currentUser',null);
+    if(!stored) return null;
+    // Siempre mergeamos con USUARIOS_DEFAULT para recoger nuevas propiedades (displayNombre, tipoRutinas, etc.)
+    const latest = USUARIOS_DEFAULT.find(u=>u.nombre===stored.nombre);
+    return latest ? {...stored,...latest} : stored;
+  });
   const [usuarios]                   = useState(USUARIOS_DEFAULT);
 
   useEffect(()=>{
@@ -4675,7 +4984,8 @@ function App(){
       setTimeout(()=>setSyncSt('idle'),3000);
     } catch(e) {
       setSyncSt('error');
-      if(!silent) toast('❌ Sin conexión — usando datos guardados');
+      if(!silent) toast('❌ ' + (e.message || 'Sin conexión') + ' — datos guardados');
+      else console.warn('[doSync error]', e.message);
       setTimeout(()=>setSyncSt('idle'),5000);
     }
   }
@@ -4774,8 +5084,8 @@ function App(){
         className:'badge', onClick:()=>setView('alertas')
       }, alertCount),
       !hasBack && React.createElement('div',{
-        title:`${currentUser?.nombre||'?'} · Toca para salir`,
-        onClick:()=>{ if(window.confirm(`¿Cerrar sesión de ${currentUser?.nombre}?`)){ DB.set('currentUser',null); setCurrentUser(null); try{sessionStorage.removeItem('masama_unlocked');}catch{} } },
+        title:`${currentUser?.displayNombre||currentUser?.nombre||'?'} · Toca para salir`,
+        onClick:()=>{ if(window.confirm(`¿Cerrar sesión de ${currentUser?.displayNombre||currentUser?.nombre}?`)){ DB.set('currentUser',null); setCurrentUser(null); try{sessionStorage.removeItem('masama_unlocked');}catch{} } },
         style:{
           width:28,height:28,borderRadius:'50%',
           background:currentUser?.color||'#C00000',
@@ -4803,7 +5113,7 @@ function App(){
       : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
       : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
       : view==='rayen'     ? React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
-      : view==='rutinas'   ? React.createElement(ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
+      : view==='rutinas'   ? React.createElement(currentUser?.tipoRutinas==='cognitivo'?ViewRutinasCognitivas:ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
       : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{DB.set('autoSync',cfg);},userSession:currentUser,onSync:()=>doSync(false),scriptUrl,setScriptUrlProp:(url)=>{setScriptUrl(url);DB.set('scriptUrl',url);DB.set('autoSync',{url,enabled:!!url});}})
