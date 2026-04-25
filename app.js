@@ -82,6 +82,24 @@ function genId(nombre,rut){
                :String(nombre||'').replace(/\s/g,'').toUpperCase().slice(0,12);
   return base||`PAC_${Date.now()}`;
 }
+function normTallerClient(raw){
+  if(!raw) return '';
+  const d=String(raw).trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  if(!d||d.includes('MANUAL')||d.includes('ONLINE')||d==='PEND') return 'SIN ASIGNAR';
+  if(d.includes('V.M. 2')||d.includes('VM 2')||d==='VM L-M') return 'VM 2.0';
+  if(d.includes('SALITRE'))     return 'VILLA EL SALITRE';
+  if(d.includes('CUMBRES'))     return 'CUMBRES ANDINAS';
+  if(d.includes('NUEVA VIDA'))  return 'NUEVA VIDA';
+  if(d.includes('FUNDACI'))     return 'LA FUNDACIÓN';
+  if(d.includes('SAN SEBAS'))   return 'SAN SEBASTIAN';
+  if(d.includes('EXPERIENCIA')||d.includes('JUVENTUD')||d.includes('ETERNA')||d.includes('CAPILLA')) return 'EXPERIENCIA Y JUVENTUD';
+  if(d.includes('UV19 AM')||d.includes('UV 19 AM')) return 'UV19 AM27';
+  if(d.includes('UV19 PM')||d.includes('UV 19 PM')) return 'UV19 PM';
+  if(d==='UV 19'||d==='UV19') return 'UV19 AM27';
+  if(d.includes('UV18'))        return 'UV18';
+  if(d.includes('VM M-J')||d.includes('MACUL M')) return 'VILLA MACUL M-J';
+  return String(raw).trim();
+}
 function calcEmpamEstado(fecha){
   if(!fecha||fecha==='PEND') return 'PENDIENTE';
   try{
@@ -152,7 +170,7 @@ function parseMaestroExcel(file){
             rango:String(o['RANGO ETARIO']||'').trim(),
             pais:String(o['PAÍS']||'Chile').trim(),
             prevision:String(o['PREVISIÓN']||'FONASA').trim(),
-            taller:String(o['TALLER ASIGNADO']||'').trim(),
+            taller:normTallerClient(o['TALLER ASIGNADO']||o['DETALLE ESTADO']||''),
             ciclo:String(o['CICLO']||'').trim(),
             estado:String(o['ESTADO']||'').trim(),
             detalle:String(o['DETALLE ESTADO']||'').trim(),
@@ -769,7 +787,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
 // ─────────────────────────────────────────────────────────────────────
 // VIEW: PASAR LISTA
 // ─────────────────────────────────────────────────────────────────────
-function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,setSessionNotes,currentUser}){
+function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,setSessionNotes,currentUser,setPatients}){
   const [step,setStep]=useState('taller');
   const [selTaller,setTaller]=useState('');
   const [selFecha,setFecha]=useState(todayISO());
@@ -779,6 +797,8 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
   const [colaCitacion,setCola]=useState([]);
   const [showCola,setShowCola]=useState(false);
   const [colaIdx,setColaIdx]=useState(0);
+  const [showQuickAdd,setShowQuickAdd]=useState(false);
+  const [quickForm,setQuickForm]=useState({nombre:'',rut:'',fono:''});
 
   const tallerPacs=useMemo(()=>
     patients.filter(p=>p.taller===selTaller&&
@@ -880,6 +900,16 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
       React.createElement('span',{className:'search-icon'},'🔍'),
       React.createElement('input',{type:'text',placeholder:'Buscar...',value:search,onChange:e=>setSearch(e.target.value)})
     ),
+    // Botón agregar paciente local
+    React.createElement('button',{
+      onClick:()=>{ setQuickForm({nombre:'',rut:'',fono:''}); setShowQuickAdd(true); },
+      style:{
+        display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+        width:'100%',padding:'9px 14px',marginBottom:10,
+        background:'none',border:'1.5px dashed #17A589',borderRadius:12,
+        color:'#17A589',fontWeight:700,fontSize:13,cursor:'pointer',
+      }
+    },'➕ Agregar paciente a este taller'),
     // List
     tallerPacs.length===0
       ?React.createElement('div',{className:'empty-state'},
@@ -897,10 +927,16 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8}},
             React.createElement(Avatar,{sexo:p.sexo,nombre:p.nombre}),
             React.createElement('div',{style:{flex:1,minWidth:0}},
-              React.createElement('div',{style:{
-                fontWeight:700,fontSize:14,
-                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'
-              }},p.nombre),
+              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:5}},
+                React.createElement('span',{style:{
+                  fontWeight:700,fontSize:14,
+                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'
+                }},p.nombre),
+                p.localOnly&&React.createElement('span',{
+                  title:'Solo en este celular — no sincronizado con Drive',
+                  style:{fontSize:11,color:'#E67E22',fontWeight:700,flexShrink:0}
+                },'📱')
+              ),
               React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,marginTop:2,flexWrap:'wrap'}},
                 p.edad&&React.createElement('span',{style:{fontSize:11,color:'#aaa'}},p.edad+'a'),
                 React.createElement(EmpamChip,{estado:p.empamEstado}),
@@ -1164,6 +1200,72 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
     })(),
 
     // Note modal
+    showQuickAdd&&React.createElement('div',{className:'overlay',onClick:e=>{ if(e.target===e.currentTarget) setShowQuickAdd(false); }},
+      React.createElement('div',{className:'sheet'},
+        React.createElement('div',{className:'sheet-handle'}),
+        React.createElement('div',{style:{fontWeight:800,fontSize:16,marginBottom:4}},'➕ Agregar paciente al taller'),
+        React.createElement('div',{style:{fontSize:12,color:'#777',marginBottom:10}},selTaller),
+        // Aviso local-only
+        React.createElement('div',{style:{
+          display:'flex',alignItems:'flex-start',gap:8,
+          background:'#FEF9E7',border:'1.5px solid #F4D03F',borderRadius:10,
+          padding:'10px 12px',marginBottom:14,fontSize:12,color:'#7E5109',lineHeight:1.5,
+        }},
+          React.createElement('span',{style:{fontSize:18,flexShrink:0}},'📱'),
+          React.createElement('span',null,
+            React.createElement('strong',null,'Solo en este celular — '),
+            'este paciente quedará guardado únicamente aquí. ',
+            React.createElement('strong',null,'No se subirá al Drive ni al Maestro Excel.'),
+            ' Es un recordatorio temporal para esta sesión.'
+          )
+        ),
+        React.createElement(Field,{label:'Nombre completo *'},
+          React.createElement('input',{type:'text',placeholder:'Apellido Apellido Nombre',
+            value:quickForm.nombre,
+            onChange:e=>setQuickForm(f=>({...f,nombre:e.target.value.toUpperCase()}))
+          })
+        ),
+        React.createElement(Field,{label:'RUT *'},
+          React.createElement('input',{type:'text',placeholder:'12345678-9',
+            value:quickForm.rut,
+            onChange:e=>setQuickForm(f=>({...f,rut:e.target.value}))
+          })
+        ),
+        React.createElement(Field,{label:'Teléfono'},
+          React.createElement('input',{type:'tel',placeholder:'+56 9 XXXX XXXX',
+            value:quickForm.fono,
+            onChange:e=>setQuickForm(f=>({...f,fono:e.target.value}))
+          })
+        ),
+        React.createElement('div',{className:'btn-row',style:{marginTop:12}},
+          React.createElement('button',{className:'btn btn-ghost',style:{flex:1},onClick:()=>setShowQuickAdd(false)},'Cancelar'),
+          React.createElement('button',{
+            className:'btn btn-primary',style:{flex:2},
+            onClick:()=>{
+              if(!quickForm.nombre.trim()||!quickForm.rut.trim()){
+                toast('❌ Nombre y RUT son obligatorios'); return;
+              }
+              const newP={
+                id:genId(quickForm.nombre,quickForm.rut),
+                nombre:quickForm.nombre.trim(),
+                rut:quickForm.rut.trim(),
+                fono:quickForm.fono.trim(),
+                taller:selTaller,
+                sexo:'M', edad:'', prevision:'FONASA',
+                hta:'',ecv:'',dm:'',dmir:'',resp:'',caid:'',
+                empamEstado:'PENDIENTE', empamFecha:'', empamDias:null,
+                alertaAsist:'OK', totalPresencias:0, totalSesiones:0, pctAsistencia:0,
+                localOnly:true, isNew:true, createdAt:new Date().toISOString(),
+              };
+              const updated=[...patients, newP];
+              if(setPatients){ setPatients(updated); DB.set('patients',updated); }
+              setShowQuickAdd(false);
+              toast('✅ Paciente agregado (solo local 📱)');
+            }
+          },'✅ Agregar')
+        )
+      )
+    ),
     notePatient&&React.createElement('div',{className:'overlay',onClick:e=>{ if(e.target===e.currentTarget) setNotePatient(null); }},
       React.createElement('div',{className:'sheet'},
         React.createElement('div',{className:'sheet-handle'}),
@@ -5315,7 +5417,7 @@ function App(){
     try{ return sessionStorage.getItem('masama_unlocked')==='1'; }catch{ return false; }
   });
   const [view,setView]         = useState('inicio');
-  const [patients,setPatients] = useState(()=>refreshEmpam(DB.get('patients',[])));
+  const [patients,setPatients] = useState(()=>refreshEmpam(DB.get('patients',[]).map(p=>({...p,taller:normTallerClient(p.taller)}))));
   const [attendanceLog,setAL]  = useState(()=>DB.get('attendanceLog',{}));
   const [sessionNotes,setSN]   = useState(()=>DB.get('sessionNotes',{}));
   const [sessionLog,setSL]     = useState(()=>DB.get('sessionLog',{}));
@@ -5330,7 +5432,7 @@ function App(){
     if(SCRIPT_URL_EMBEDDED){ DB.set('scriptUrl',SCRIPT_URL_EMBEDDED); return SCRIPT_URL_EMBEDDED; }
     return '';
   });
-  const [autoSync]             = useState(()=>DB.get('autoSync',{url:DB.get('scriptUrl',''),enabled:!!DB.get('scriptUrl','')}));
+  const [autoSync, setAutoSync] = useState(()=>DB.get('autoSync',{url:DB.get('scriptUrl',''),enabled:!!DB.get('scriptUrl','')}));
   const [currentUser,setCurrentUser] = useState(()=>{
     const stored = DB.get('currentUser',null);
     if(!stored) return null;
@@ -5563,9 +5665,9 @@ function App(){
             style:{maxWidth:280,margin:'0 auto'},onClick:()=>setView('config')},
             '📂 Importar Maestro'))
       : view==='inicio'    ? React.createElement(ViewInicio,{patients:visiblePatients,attendanceLog,onNav:setView,currentUser,autoSync,syncStatus,lastSync,doSync})
-      : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN,currentUser})
+      : view==='lista'     ? React.createElement(ViewLista,{patients:visiblePatients,attendanceLog,setAttendanceLog:setAL,toast,sessionNotes,setSessionNotes:setSN,currentUser,setPatients})
       : view==='pacientes' ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:()=>setView('nuevo')})
-      : view==='nuevo'     ? React.createElement(ViewPacientes,{patients:visiblePatients,onPatient:openPatient,onNuevo:null})
+      : view==='nuevo'     ? React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:()=>setView('pacientes'),doSync,autoSync})
       : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast,attendanceLog})
       : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
       : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
@@ -5573,7 +5675,7 @@ function App(){
       : view==='rutinas'   ? React.createElement(currentUser?.tipoRutinas==='cognitivo'?ViewRutinasCognitivas:ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
       : view==='rem'       ? React.createElement(ViewREM,{patients:visiblePatients,attendanceLog,toast})
       : view==='agenda'    ? React.createElement(ViewAgenda,{toast})
-      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{DB.set('autoSync',cfg);},userSession:currentUser,onSync:()=>doSync(false),scriptUrl,setScriptUrlProp:(url)=>{setScriptUrl(url);DB.set('scriptUrl',url);DB.set('autoSync',{url,enabled:!!url});}})
+      : view==='config'    ? React.createElement(ViewConfig,{patients,setPatients,toast,syncConfig:autoSync,setSyncConfig:(cfg)=>{setAutoSync(cfg);DB.set('autoSync',cfg);},userSession:currentUser,onSync:()=>doSync(false),scriptUrl,setScriptUrlProp:(url)=>{setScriptUrl(url);DB.set('scriptUrl',url);const cfg={url,enabled:!!url};setAutoSync(cfg);DB.set('autoSync',cfg);}})
       : view==='control'   ? React.createElement(ViewControlMaestro,{scriptUrl,toast})
       : null,
 
