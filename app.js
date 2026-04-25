@@ -798,7 +798,8 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
   const [showCola,setShowCola]=useState(false);
   const [colaIdx,setColaIdx]=useState(0);
   const [showQuickAdd,setShowQuickAdd]=useState(false);
-  const [quickForm,setQuickForm]=useState({nombre:'',rut:'',fono:''});
+  const QUICK_EMPTY={nombre:'',rut:'',fono:'',sexo:'M',edad:'',prevision:'FONASA',empamPre:'PEND',obs:''};
+  const [quickForm,setQuickForm]=useState(QUICK_EMPTY);
 
   const tallerPacs=useMemo(()=>
     patients.filter(p=>p.taller===selTaller&&
@@ -900,43 +901,53 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
       React.createElement('span',{className:'search-icon'},'🔍'),
       React.createElement('input',{type:'text',placeholder:'Buscar...',value:search,onChange:e=>setSearch(e.target.value)})
     ),
-    // Botón agregar paciente local
+    // Botón registrar nuevo asistente
     React.createElement('button',{
-      onClick:()=>{ setQuickForm({nombre:'',rut:'',fono:''}); setShowQuickAdd(true); },
+      onClick:()=>{ setQuickForm(QUICK_EMPTY); setShowQuickAdd(true); },
       style:{
-        display:'flex',alignItems:'center',justifyContent:'center',gap:6,
-        width:'100%',padding:'9px 14px',marginBottom:10,
-        background:'none',border:'1.5px dashed #17A589',borderRadius:12,
-        color:'#17A589',fontWeight:700,fontSize:13,cursor:'pointer',
+        display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+        width:'100%',padding:'10px 14px',marginBottom:10,
+        background:'linear-gradient(135deg,#17A589,#1A8A75)',
+        border:'none',borderRadius:12,
+        color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',
+        boxShadow:'0 2px 8px rgba(23,165,137,.25)',
       }
-    },'➕ Agregar paciente a este taller'),
-    // List
+    },'🆕 Registrar nuevo asistente'),
+    // Lista: primero nuevos ingresos (localOnly), luego el resto
     tallerPacs.length===0
       ?React.createElement('div',{className:'empty-state'},
           React.createElement('div',{className:'emoji'},'👥'),
-          React.createElement('p',null,'Sin pacientes para este taller'))
-      :tallerPacs.map(p=>{
+          React.createElement('p',null,'Sin pacientes en este taller'),
+          React.createElement('p',{style:{fontSize:12,color:'#aaa',marginTop:4}},
+            'Usa el botón de arriba para registrar asistentes nuevos'))
+      :[...tallerPacs.filter(p=>p.localOnly), ...tallerPacs.filter(p=>!p.localOnly)].map(p=>{
         const key=p.rut||p.id; const att=getAtt(key); const nota=getNote(key);
         const necesitaWsp = p.fono && !p.empamEstado?.includes('VIGENTE');
         const tipoWsp = p.empamEstado?.includes('VENCIDO')?'VENCIDO':p.empamEstado?.includes('PRONTO')?'PRONTO':'PENDIENTE';
 
         return React.createElement('div',{key:p.id,
-          style:{borderBottom:'1px solid #f0f0f0',padding:'10px 4px'}},
+          style:{
+            borderBottom:'1px solid #f0f0f0',padding:'10px 4px',
+            ...(p.localOnly ? {
+              background:'linear-gradient(135deg,#FDFEFE,#E8FAF5)',
+              borderLeft:'3px solid #17A589',paddingLeft:8,borderRadius:'0 8px 8px 0',marginBottom:4,
+            } : {})
+          }},
+          p.localOnly&&React.createElement('div',{style:{
+            display:'inline-flex',alignItems:'center',gap:4,
+            background:'#17A589',color:'#fff',
+            fontSize:10,fontWeight:800,letterSpacing:.5,
+            padding:'2px 8px',borderRadius:20,marginBottom:6,
+          }},'🆕 NUEVO INGRESO · solo local 📱'),
 
           // ── Fila 1: Avatar · Nombre · Toggle P/A ─────────────────
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8}},
             React.createElement(Avatar,{sexo:p.sexo,nombre:p.nombre}),
             React.createElement('div',{style:{flex:1,minWidth:0}},
-              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:5}},
-                React.createElement('span',{style:{
-                  fontWeight:700,fontSize:14,
-                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'
-                }},p.nombre),
-                p.localOnly&&React.createElement('span',{
-                  title:'Solo en este celular — no sincronizado con Drive',
-                  style:{fontSize:11,color:'#E67E22',fontWeight:700,flexShrink:0}
-                },'📱')
-              ),
+              React.createElement('div',{style:{fontWeight:700,fontSize:14,
+                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},p.nombre),
+              p.obs&&React.createElement('div',{style:{fontSize:11,color:'#17A589',fontStyle:'italic',marginTop:1,
+                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},`💬 ${p.obs}`),
               React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4,marginTop:2,flexWrap:'wrap'}},
                 p.edad&&React.createElement('span',{style:{fontSize:11,color:'#aaa'}},p.edad+'a'),
                 React.createElement(EmpamChip,{estado:p.empamEstado}),
@@ -1199,46 +1210,127 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
       );
     })(),
 
-    // Note modal
+    // ── Modal: Registro Nuevo Asistente ──────────────────────────────
     showQuickAdd&&React.createElement('div',{className:'overlay',onClick:e=>{ if(e.target===e.currentTarget) setShowQuickAdd(false); }},
-      React.createElement('div',{className:'sheet'},
+      React.createElement('div',{className:'sheet',style:{maxHeight:'90vh',overflowY:'auto',paddingBottom:24}},
         React.createElement('div',{className:'sheet-handle'}),
-        React.createElement('div',{style:{fontWeight:800,fontSize:16,marginBottom:4}},'➕ Agregar paciente al taller'),
-        React.createElement('div',{style:{fontSize:12,color:'#777',marginBottom:10}},selTaller),
-        // Aviso local-only
-        React.createElement('div',{style:{
-          display:'flex',alignItems:'flex-start',gap:8,
-          background:'#FEF9E7',border:'1.5px solid #F4D03F',borderRadius:10,
-          padding:'10px 12px',marginBottom:14,fontSize:12,color:'#7E5109',lineHeight:1.5,
-        }},
-          React.createElement('span',{style:{fontSize:18,flexShrink:0}},'📱'),
-          React.createElement('span',null,
-            React.createElement('strong',null,'Solo en este celular — '),
-            'este paciente quedará guardado únicamente aquí. ',
-            React.createElement('strong',null,'No se subirá al Drive ni al Maestro Excel.'),
-            ' Es un recordatorio temporal para esta sesión.'
+
+        // Header
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:4}},
+          React.createElement('div',{style:{
+            width:38,height:38,borderRadius:12,flexShrink:0,
+            background:'linear-gradient(135deg,#17A589,#1A8A75)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,
+          }},'🆕'),
+          React.createElement('div',null,
+            React.createElement('div',{style:{fontWeight:900,fontSize:16,color:'#1A3A5C'}},'Nuevo Asistente'),
+            React.createElement('div',{style:{fontSize:12,color:'#777'}},`Taller: ${selTaller} · ${selFecha}`)
           )
         ),
+
+        // Banner local-only
+        React.createElement('div',{style:{
+          display:'flex',alignItems:'flex-start',gap:10,
+          background:'#FEF9E7',border:'1.5px solid #F4D03F',borderRadius:12,
+          padding:'10px 14px',margin:'12px 0',fontSize:12,color:'#7E5109',lineHeight:1.6,
+        }},
+          React.createElement('span',{style:{fontSize:20,flexShrink:0,marginTop:1}},'📱'),
+          React.createElement('span',null,
+            React.createElement('strong',null,'Solo en este celular. '),
+            'Este registro NO se sube al Drive ni al Maestro Excel. ',
+            'Sirve para marcar asistencia y como recordatorio de ingreso. ',
+            React.createElement('strong',null,'Luego agrega la persona al Maestro manualmente.')
+          )
+        ),
+
+        // Campos obligatorios
+        React.createElement('div',{style:{fontWeight:700,fontSize:11,color:'#17A589',
+          letterSpacing:1,textTransform:'uppercase',marginBottom:8,marginTop:4}},
+          'Datos obligatorios'),
+
         React.createElement(Field,{label:'Nombre completo *'},
-          React.createElement('input',{type:'text',placeholder:'Apellido Apellido Nombre',
+          React.createElement('input',{
+            type:'text', placeholder:'APELLIDO APELLIDO Nombre',
             value:quickForm.nombre,
+            style:{textTransform:'uppercase'},
             onChange:e=>setQuickForm(f=>({...f,nombre:e.target.value.toUpperCase()}))
           })
         ),
-        React.createElement(Field,{label:'RUT *'},
-          React.createElement('input',{type:'text',placeholder:'12345678-9',
-            value:quickForm.rut,
-            onChange:e=>setQuickForm(f=>({...f,rut:e.target.value}))
+        React.createElement('div',{className:'field-row'},
+          React.createElement(Field,{label:'RUT *'},
+            React.createElement('input',{
+              type:'text', placeholder:'12345678-9',
+              value:quickForm.rut,
+              onChange:e=>setQuickForm(f=>({...f,rut:e.target.value}))
+            })
+          ),
+          React.createElement(Field,{label:'Sexo'},
+            React.createElement('select',{value:quickForm.sexo,onChange:e=>setQuickForm(f=>({...f,sexo:e.target.value}))},
+              React.createElement('option',{value:'M'},'♀ Mujer'),
+              React.createElement('option',{value:'H'},'♂ Hombre')
+            )
+          )
+        ),
+
+        // Campos opcionales
+        React.createElement('div',{style:{fontWeight:700,fontSize:11,color:'#888',
+          letterSpacing:1,textTransform:'uppercase',marginBottom:8,marginTop:12}},
+          'Datos opcionales'),
+
+        React.createElement('div',{className:'field-row'},
+          React.createElement(Field,{label:'Teléfono'},
+            React.createElement('input',{
+              type:'tel', placeholder:'+56 9 XXXX XXXX',
+              value:quickForm.fono,
+              onChange:e=>setQuickForm(f=>({...f,fono:e.target.value}))
+            })
+          ),
+          React.createElement(Field,{label:'Edad'},
+            React.createElement('input',{
+              type:'number', placeholder:'70', min:50, max:120,
+              value:quickForm.edad,
+              onChange:e=>setQuickForm(f=>({...f,edad:e.target.value}))
+            })
+          )
+        ),
+        React.createElement('div',{className:'field-row'},
+          React.createElement(Field,{label:'Previsión'},
+            React.createElement('select',{value:quickForm.prevision,onChange:e=>setQuickForm(f=>({...f,prevision:e.target.value}))},
+              ['FONASA','ISAPRE','SIN PREVISIÓN'].map(v=>React.createElement('option',{key:v,value:v},v))
+            )
+          ),
+          React.createElement(Field,{label:'Estado EMPAM'},
+            React.createElement('select',{value:quickForm.empamPre,onChange:e=>setQuickForm(f=>({...f,empamPre:e.target.value}))},
+              React.createElement('option',{value:'PEND'},'⏳ Pendiente'),
+              Object.entries(EMPAM_CODES).map(([k,v])=>React.createElement('option',{key:k,value:k},`${k} — ${v}`))
+            )
+          )
+        ),
+        React.createElement(Field,{label:'Observación / Motivo de ingreso'},
+          React.createElement('textarea',{
+            placeholder:'Ej: Derivado por médico, interesado en el programa, vecino del sector...',
+            value:quickForm.obs,
+            onChange:e=>setQuickForm(f=>({...f,obs:e.target.value})),
+            style:{width:'100%',minHeight:64,padding:'8px 12px',resize:'none',
+              border:'1.5px solid #E0E0E0',borderRadius:12,fontSize:13,outline:'none'}
           })
         ),
-        React.createElement(Field,{label:'Teléfono'},
-          React.createElement('input',{type:'tel',placeholder:'+56 9 XXXX XXXX',
-            value:quickForm.fono,
-            onChange:e=>setQuickForm(f=>({...f,fono:e.target.value}))
-          })
+
+        // Info asistencia automática
+        React.createElement('div',{style:{
+          display:'flex',alignItems:'center',gap:8,
+          background:'#EAFAF1',border:'1.5px solid #58D68D',borderRadius:10,
+          padding:'8px 12px',marginTop:8,fontSize:12,color:'#1E8449',fontWeight:600,
+        }},
+          '✅ Se marcará automáticamente como Presente en la sesión de hoy'
         ),
-        React.createElement('div',{className:'btn-row',style:{marginTop:12}},
-          React.createElement('button',{className:'btn btn-ghost',style:{flex:1},onClick:()=>setShowQuickAdd(false)},'Cancelar'),
+
+        // Botones
+        React.createElement('div',{className:'btn-row',style:{marginTop:16}},
+          React.createElement('button',{
+            className:'btn btn-ghost',style:{flex:1},
+            onClick:()=>{ setShowQuickAdd(false); setQuickForm(QUICK_EMPTY); }
+          },'Cancelar'),
           React.createElement('button',{
             className:'btn btn-primary',style:{flex:2},
             onClick:()=>{
@@ -1250,19 +1342,27 @@ function ViewLista({patients,attendanceLog,setAttendanceLog,toast,sessionNotes,s
                 nombre:quickForm.nombre.trim(),
                 rut:quickForm.rut.trim(),
                 fono:quickForm.fono.trim(),
+                sexo:quickForm.sexo,
+                edad:quickForm.edad,
+                prevision:quickForm.prevision,
+                empamPre:quickForm.empamPre!=='PEND'?quickForm.empamPre:'',
+                obs:quickForm.obs.trim(),
                 taller:selTaller,
-                sexo:'M', edad:'', prevision:'FONASA',
                 hta:'',ecv:'',dm:'',dmir:'',resp:'',caid:'',
-                empamEstado:'PENDIENTE', empamFecha:'', empamDias:null,
-                alertaAsist:'OK', totalPresencias:0, totalSesiones:0, pctAsistencia:0,
-                localOnly:true, isNew:true, createdAt:new Date().toISOString(),
+                empamEstado:'PENDIENTE',empamFecha:'',empamDias:null,
+                alertaAsist:'OK',totalPresencias:0,totalSesiones:0,pctAsistencia:0,
+                localOnly:true,isNew:true,createdAt:new Date().toISOString(),
               };
-              const updated=[...patients, newP];
+              const updated=[...patients,newP];
               if(setPatients){ setPatients(updated); DB.set('patients',updated); }
-              setShowQuickAdd(false);
-              toast('✅ Paciente agregado (solo local 📱)');
+              // Marcar automáticamente como PRESENTE
+              const k=attKey(newP.rut||newP.id);
+              const nextAtt={...attendanceLog,[k]:'P'};
+              setAttendanceLog(nextAtt); DB.set('attendanceLog',nextAtt);
+              setShowQuickAdd(false); setQuickForm(QUICK_EMPTY);
+              toast('✅ Nuevo asistente registrado y marcado Presente 📱');
             }
-          },'✅ Agregar')
+          },'🆕 Registrar asistente')
         )
       )
     ),

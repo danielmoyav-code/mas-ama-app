@@ -119,147 +119,181 @@ function testScript() {
 }
 
 // ── Lógica principal ──────────────────────────────────────────────
+// Asistencia = fuente primaria de TALLER y LISTA DE PACIENTES
+// Gestión    = fuente de DATOS CLÍNICOS (EMPAM, comorbilidades, evaluaciones)
 function construirDatos() {
 
-  // ── 1. Hoja PLANILLA del archivo Gestión ─────────────────────────
-  var ssG     = SpreadsheetApp.openById(GESTION_ID);
-  var hoja    = ssG.getSheetByName('PLANILLA') || ssG.getSheets()[1];
-  var datos   = hoja.getDataRange().getValues();
-  // datos[0] = cabecera, datos[1..] = pacientes
+  var ssG = SpreadsheetApp.openById(GESTION_ID);
+  var ssA = SpreadsheetApp.openById(ASISTENCIA_ID);
 
-  var pacientes = [];
-  var talleres  = {};
-  var empamEst  = {};
+  // ── 1. Leer Gestión → mapa clínico por RUT ────────────────────────
+  var hojaG  = ssG.getSheetByName('PLANILLA') || ssG.getSheets()[1];
+  var datosG = hojaG.getDataRange().getValues();
+
+  var gestionPorRut = {};   // RUT → fila completa de Gestión
+  for (var i = 1; i < datosG.length; i++) {
+    var rg = normRut(str(datosG[i], C.RUT));
+    if (rg) gestionPorRut[rg] = datosG[i];
+  }
+
+  // ── 2. Leer Asistencia → lista primaria de pacientes + talleres ───
+  var hojaA  = ssA.getSheets()[0];
+  var datosA = hojaA.getDataRange().getValues();
+
+  var pacientes   = [];
+  var talleres    = {};
+  var empamEst    = {};
   var presMuestra = [];
+  var vistosRut   = {};
 
-  for (var i = 1; i < datos.length; i++) {
-    var r = datos[i];
+  if (datosA.length > 1) {
+    var headA    = datosA[0].map(function(h){ return limpiar(h); });
+    var iARut    = buscarCol(headA, ['RUT','RUN']);
+    var iANombre = buscarCol(headA, ['NOMBRE','NOMBRE COMPLETO','PACIENTE','APELLIDOS Y NOMBRE']);
+    var iATaller = buscarCol(headA, ['TALLER','TALLER ASIGNADO','DETALLE ESTADO','GRUPO','TALLER_ASIGNADO']);
+    var iAPres   = buscarCol(headA, ['TOTAL','PRESENCIAS','SESIONES ASISTIDAS','TOTAL PRESENCIAS','N PRESENCIAS','ASISTENCIA N']);
+    var iAFono   = buscarCol(headA, ['FONO','TELEFONO','TEL','CELULAR','FONO_CONTACTO']);
+    var iASexo   = buscarCol(headA, ['SEXO']);
+    var iAEdad   = buscarCol(headA, ['EDAD']);
 
-    var nombre = str(r, C.NOMBRE);
-    var rut    = normRut(str(r, C.RUT));
-    if (!nombre && !rut) continue;  // fila vacía
+    for (var j = 1; j < datosA.length; j++) {
+      var ra   = datosA[j];
+      var rut  = normRut(iARut >= 0 ? String(ra[iARut] || '') : '');
+      var nombre = iANombre >= 0 ? String(ra[iANombre] || '').trim().toUpperCase() : '';
 
-    var tallerRaw  = str(r, C.TALLER);
-    var taller     = normTaller(tallerRaw);
-    var vigenciaRaw= r[C.EMPAM_VIG];
-    var presRaw    = r[C.PRES_TOT];
-    var presencias = !isNaN(Number(presRaw)) && presRaw !== '' ? Math.round(Number(presRaw)) : 0;
-    var empamEstad = calcEmpamEstado(str(r, C.EMPAM_EST), vigenciaRaw);
-    var empamFecha = normFecha(vigenciaRaw);
-    var fono       = normFono(str(r, C.FONO));
-    var estado     = str(r, C.ESTADO);
+      if (!rut && !nombre) continue;
+      if (rut && vistosRut[rut]) continue;   // evitar duplicados
+      if (rut) vistosRut[rut] = true;
 
-    // Debug
-    talleres[taller] = (talleres[taller]||0) + 1;
-    empamEst[empamEstad] = (empamEst[empamEstad]||0) + 1;
-    if (presMuestra.length < 5) presMuestra.push({ nombre: nombre, pres: presencias, raw: presRaw });
+      // Taller desde Asistencia (fuente correcta para UV19 PM, etc.)
+      var tallerRaw = iATaller >= 0 ? String(ra[iATaller] || '') : '';
+      var taller    = normTaller(tallerRaw);
 
-    pacientes.push({
-      id:           'p' + i,
-      nombre:       nombre,
-      rut:          rut,
-      taller:       taller,
-      tallerRaw:    tallerRaw,
-      ciclo:        str(r, C.CICLO),
-      estado:       estado,
-      sexo:         str(r, C.SEXO),
-      edad:         str(r, C.EDAD),
-      fono:         fono,
-      prevision:    str(r, C.PREVISION),
-      hta:          str(r, C.HTA),
-      ecv:          str(r, C.ECV),
-      dm:           str(r, C.DM),
-      dmir:         str(r, C.DMIR),
-      resp:         str(r, C.RESP),
-      caid:         str(r, C.CAID),
-      empamEstado:  empamEstad,
-      empamFecha:   empamFecha,
-      empamPre:     str(r, C.EMPAM_EST),
-      empamPost:    str(r, C.EMPAM_RES),
-      tugPre:       str(r, C.TUG_PRE),
-      tugPost:      str(r, C.TUG_POST),
-      eupDerPre:    str(r, C.EUP_D_PRE),
-      eupIzqPre:    str(r, C.EUP_I_PRE),
-      eupDerPost:   str(r, C.EUP_D_POST),
-      eupIzqPost:   str(r, C.EUP_I_POST),
-      haqPre:       str(r, C.HAQ_PRE),
-      haqPost:      str(r, C.HAQ_POST),
-      resTug:       str(r, C.RES_TUG),
-      resEupDer:    str(r, C.RES_EUP_D),
-      resEupIzq:    str(r, C.RES_EUP_I),
-      totalPresencias: presencias,
-      totalSesiones:   20,
-      pctAsistencia:   Math.round(presencias / 20 * 100),
-      alertaAsist:     presencias < 20 ? 'BAJO' : 'OK',
-      isNew:           estado === 'TALLER' ? '' : 'SI',
-    });
-  }
+      // Presencias desde Asistencia
+      var presRaw   = iAPres >= 0 ? ra[iAPres] : '';
+      var presencias = (!isNaN(Number(presRaw)) && presRaw !== '') ? Math.round(Number(presRaw)) : 0;
 
-  // ── 2. Hoja Asistencia (archivo separado) ─────────────────────────
-  var talleresPorRut   = {};
-  var presenciasPorRut = {};
+      // Datos base de Asistencia (fallback si Gestión no tiene al paciente)
+      var fonoAsis = iAFono >= 0 ? normFono(String(ra[iAFono] || '')) : '';
+      var sexoAsis = iASexo >= 0 ? String(ra[iASexo] || '').trim().toUpperCase() : '';
+      var edadAsis = iAEdad >= 0 ? String(ra[iAEdad] || '').trim() : '';
 
-  try {
-    var ssA  = SpreadsheetApp.openById(ASISTENCIA_ID);
-    var hA   = ssA.getSheets()[0];
-    var datA = hA.getDataRange().getValues();
+      // Datos clínicos de Gestión (enriquecimiento por RUT)
+      var g          = rut ? gestionPorRut[rut] : null;
+      var vigenciaRaw = g ? g[C.EMPAM_VIG] : '';
+      var empamEstad  = calcEmpamEstado(g ? str(g, C.EMPAM_EST) : '', vigenciaRaw);
+      var empamFecha  = normFecha(vigenciaRaw);
+      var fono        = (g ? normFono(str(g, C.FONO)) : '') || fonoAsis;
+      var estado      = g ? str(g, C.ESTADO) : 'TALLER';
 
-    if (datA.length > 1) {
-      var headA   = datA[0].map(function(h){ return limpiar(h); });
-      var iARut   = buscarCol(headA, ['RUT','RUN']);
-      var iATaller= buscarCol(headA, ['TALLER','TALLER ASIGNADO','DETALLE ESTADO','GRUPO']);
-      var iAPres  = buscarCol(headA, ['TOTAL','PRESENCIAS','SESIONES ASISTIDAS','TOTAL PRESENCIAS','ASISTENCIA N']);
+      // Si Asistencia no tiene nombre, lo tomamos de Gestión
+      if (!nombre && g) nombre = str(g, C.NOMBRE);
+      if (!nombre) continue;
 
-      for (var j = 1; j < datA.length; j++) {
-        var ra  = datA[j];
-        var rut = normRut(ra[iARut] || '');
-        if (!rut) continue;
-        if (iATaller >= 0 && ra[iATaller]) talleresPorRut[rut] = normTaller(ra[iATaller]);
-        if (iAPres >= 0 && ra[iAPres] !== '') {
-          var p = Number(ra[iAPres]);
-          if (!isNaN(p)) presenciasPorRut[rut] = Math.round(p);
-        }
-      }
+      talleres[taller]     = (talleres[taller] || 0) + 1;
+      empamEst[empamEstad] = (empamEst[empamEstad] || 0) + 1;
+      if (presMuestra.length < 5) presMuestra.push({ nombre: nombre, pres: presencias, raw: presRaw });
 
-      // Actualizar pacientes con datos de asistencia
-      for (var k = 0; k < pacientes.length; k++) {
-        var pac = pacientes[k];
-        if (talleresPorRut[pac.rut])   pac.taller          = talleresPorRut[pac.rut];
-        if (presenciasPorRut[pac.rut] !== undefined) {
-          pac.totalPresencias = presenciasPorRut[pac.rut];
-          pac.pctAsistencia   = Math.round(pac.totalPresencias / 20 * 100);
-          pac.alertaAsist     = pac.totalPresencias < 20 ? 'BAJO' : 'OK';
-        }
-      }
+      pacientes.push({
+        id:              'p' + j,
+        nombre:          nombre,
+        rut:             rut,
+        taller:          taller,
+        tallerRaw:       tallerRaw,
+        ciclo:           g ? str(g, C.CICLO)      : '',
+        estado:          estado,
+        sexo:            (g ? str(g, C.SEXO)      : '') || sexoAsis,
+        edad:            (g ? str(g, C.EDAD)      : '') || edadAsis,
+        fono:            fono,
+        prevision:       g ? str(g, C.PREVISION)  : 'FONASA',
+        hta:             g ? str(g, C.HTA)        : '',
+        ecv:             g ? str(g, C.ECV)        : '',
+        dm:              g ? str(g, C.DM)         : '',
+        dmir:            g ? str(g, C.DMIR)       : '',
+        resp:            g ? str(g, C.RESP)       : '',
+        caid:            g ? str(g, C.CAID)       : '',
+        empamEstado:     empamEstad,
+        empamFecha:      empamFecha,
+        empamPre:        g ? str(g, C.EMPAM_EST)  : '',
+        empamPost:       g ? str(g, C.EMPAM_RES)  : '',
+        tugPre:          g ? str(g, C.TUG_PRE)    : '',
+        tugPost:         g ? str(g, C.TUG_POST)   : '',
+        catInt:          g ? str(g, C.CAT_I)      : '',
+        catExt:          g ? str(g, C.CAT_E)      : '',
+        eupDerPre:       g ? str(g, C.EUP_D_PRE)  : '',
+        eupIzqPre:       g ? str(g, C.EUP_I_PRE)  : '',
+        eupDerPost:      g ? str(g, C.EUP_D_POST) : '',
+        eupIzqPost:      g ? str(g, C.EUP_I_POST) : '',
+        haqPre:          g ? str(g, C.HAQ_PRE)    : '',
+        haqPost:         g ? str(g, C.HAQ_POST)   : '',
+        resTug:          g ? str(g, C.RES_TUG)    : '',
+        resEupDer:       g ? str(g, C.RES_EUP_D)  : '',
+        resEupIzq:       g ? str(g, C.RES_EUP_I)  : '',
+        totalPresencias: presencias,
+        totalSesiones:   20,
+        pctAsistencia:   Math.round(presencias / 20 * 100),
+        alertaAsist:     presencias < 20 ? 'BAJO' : 'OK',
+        sinFichaClinica: !g,   // true si no está en Gestión
+      });
     }
-  } catch(e2) {
-    // Archivo asistencia no accesible — se usa col 65 de Gestión
-    Logger.log('Asistencia no disponible: ' + e2.toString());
   }
 
-  // ── Verificar flags de seguridad (hoja SEGURIDAD) ────────────────
-  var wipe = false;
-  var lock = false;
+  // ── 3. Fallback: si Asistencia estaba vacía, usar solo Gestión ────
+  if (pacientes.length === 0) {
+    Logger.log('⚠️ Asistencia vacía — usando solo Gestión como fallback');
+    for (var k = 1; k < datosG.length; k++) {
+      var r      = datosG[k];
+      var nombre = str(r, C.NOMBRE);
+      var rut    = normRut(str(r, C.RUT));
+      if (!nombre && !rut) continue;
+      var tallerRaw = str(r, C.TALLER);
+      var taller    = normTaller(tallerRaw);
+      var vigenciaRaw = r[C.EMPAM_VIG];
+      var presRaw     = r[C.PRES_TOT];
+      var presencias  = (!isNaN(Number(presRaw)) && presRaw !== '') ? Math.round(Number(presRaw)) : 0;
+      var empamEstad  = calcEmpamEstado(str(r, C.EMPAM_EST), vigenciaRaw);
+      talleres[taller]     = (talleres[taller] || 0) + 1;
+      empamEst[empamEstad] = (empamEst[empamEstad] || 0) + 1;
+      pacientes.push({
+        id: 'g' + k, nombre: nombre, rut: rut, taller: taller, tallerRaw: tallerRaw,
+        ciclo: str(r, C.CICLO), estado: str(r, C.ESTADO),
+        sexo: str(r, C.SEXO), edad: str(r, C.EDAD),
+        fono: normFono(str(r, C.FONO)), prevision: str(r, C.PREVISION),
+        hta: str(r, C.HTA), ecv: str(r, C.ECV), dm: str(r, C.DM),
+        dmir: str(r, C.DMIR), resp: str(r, C.RESP), caid: str(r, C.CAID),
+        empamEstado: empamEstad, empamFecha: normFecha(vigenciaRaw),
+        empamPre: str(r, C.EMPAM_EST), empamPost: str(r, C.EMPAM_RES),
+        tugPre: str(r, C.TUG_PRE), tugPost: str(r, C.TUG_POST),
+        catInt: str(r, C.CAT_I), catExt: str(r, C.CAT_E),
+        eupDerPre: str(r, C.EUP_D_PRE), eupIzqPre: str(r, C.EUP_I_PRE),
+        eupDerPost: str(r, C.EUP_D_POST), eupIzqPost: str(r, C.EUP_I_POST),
+        haqPre: str(r, C.HAQ_PRE), haqPost: str(r, C.HAQ_POST),
+        resTug: str(r, C.RES_TUG), resEupDer: str(r, C.RES_EUP_D), resEupIzq: str(r, C.RES_EUP_I),
+        totalPresencias: presencias, totalSesiones: 20,
+        pctAsistencia: Math.round(presencias / 20 * 100),
+        alertaAsist: presencias < 20 ? 'BAJO' : 'OK',
+      });
+    }
+  }
+
+  // ── 4. Verificar flags de seguridad ──────────────────────────────
+  var wipe = false, lock = false;
   try {
     var segSheet = ssG.getSheetByName('SEGURIDAD');
     if (segSheet) {
       wipe = String(segSheet.getRange('A1').getValue()).trim().toUpperCase() === 'BORRAR';
       lock = String(segSheet.getRange('A2').getValue()).trim().toUpperCase() === 'BLOQUEAR';
     }
-  } catch(eWipe) { /* hoja no existe, ignorar */ }
+  } catch(eWipe) {}
 
   return {
     pacientes: pacientes,
     wipe: wipe,
     lock: lock,
-    asistencia: {
-      talleresPorRut:  talleresPorRut,
-      presenciasPorRut: presenciasPorRut,
-    },
     _debug: {
-      totalPacientes: pacientes.length,
-      talleres:       talleres,
-      empamEstados:   empamEst,
+      totalPacientes:   pacientes.length,
+      talleres:         talleres,
+      empamEstados:     empamEst,
       presenciasMuestra: presMuestra,
     }
   };
