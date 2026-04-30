@@ -65,9 +65,21 @@ const TODAY = new Date();
 // UTILS
 // ─────────────────────────────────────────────────────────────────────
 function todayISO(){ return TODAY.toISOString().split('T')[0]; }
+// Parsea "YYYY-MM-DD" como midnight LOCAL para evitar el desfase UTC en Chile.
+// new Date("YYYY-MM-DD") = UTC midnight → en Chile (UTC-3/4) muestra el día anterior.
+function parseDateLocal(s){
+  if(!s||typeof s!=='string') return null;
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return null;
+  return new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3]));
+}
 function formatDate(d){
   if(!d||d==='—') return '—';
-  try{ return new Date(d).toLocaleDateString('es-CL'); }catch{ return String(d); }
+  try{
+    const p=parseDateLocal(d);
+    if(p&&!isNaN(p)) return p.toLocaleDateString('es-CL');
+    return new Date(d).toLocaleDateString('es-CL');
+  }catch{ return String(d); }
 }
 function empamColor(estado){
   if(!estado) return 'pendiente';
@@ -103,19 +115,18 @@ function normTallerClient(raw){
 function calcEmpamEstado(fecha){
   if(!fecha||fecha==='PEND') return 'PENDIENTE';
   try{
-    // Manejar "Prox. ENE/FEB/..." — mes aproximado año 2026
-    const proxMatch = String(fecha).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
+    const hoy=new Date(); hoy.setHours(0,0,0,0); // midnight local — evita desfase UTC
+    const proxMatch=String(fecha).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
     if(proxMatch){
       const meses={ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
-      const mesNum=meses[proxMatch[1].toUpperCase()];
-      const f=new Date(2026,mesNum-1,1);
-      const dias=Math.round((f-TODAY)/86400000);
+      const f=new Date(2026,meses[proxMatch[1].toUpperCase()]-1,1);
+      const dias=Math.round((f-hoy)/86400000);
       if(dias<0) return 'VENCIDO';
       if(dias<=30) return 'VENCE PRONTO';
       return 'VIGENTE';
     }
-    const d=new Date(fecha); if(isNaN(d)) return 'PENDIENTE';
-    const dias=Math.round((d-TODAY)/86400000);
+    const d=parseDateLocal(fecha); if(!d||isNaN(d)) return 'PENDIENTE';
+    const dias=Math.round((d-hoy)/86400000);
     if(dias<0) return 'VENCIDO';
     if(dias<=30) return 'VENCE PRONTO';
     return 'VIGENTE';
@@ -124,18 +135,23 @@ function calcEmpamEstado(fecha){
 // Recalcula empamEstado y empamDias desde empamFecha usando la fecha actual.
 // Aplicar al cargar desde caché y tras cada sync para que las alertas sean siempre vigentes.
 function refreshEmpam(pacs){
-  const now = new Date();
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
   return pacs.map(p=>{
     if(!p.empamFecha) return p;
-    const empamEstado = calcEmpamEstado(p.empamFecha);
-    const raw = new Date(p.empamFecha);
-    const empamDias = isNaN(raw) ? null : Math.round((raw - now) / 86400000);
-    return {...p, empamEstado, empamDias};
+    const empamEstado=calcEmpamEstado(p.empamFecha);
+    const d=parseDateLocal(p.empamFecha);
+    const empamDias=d&&!isNaN(d)?Math.round((d-hoy)/86400000):null;
+    return {...p,empamEstado,empamDias};
   });
 }
 function calcDias(fecha){
   if(!fecha) return null;
-  try{ return Math.round((new Date(fecha)-TODAY)/86400000); }catch{ return null; }
+  try{
+    const d=parseDateLocal(fecha);
+    if(!d||isNaN(d)) return null;
+    const hoy=new Date(); hoy.setHours(0,0,0,0);
+    return Math.round((d-hoy)/86400000);
+  }catch{ return null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1429,9 +1445,10 @@ function ViewNuevo({patients,setPatients,toast,onBack,doSync,autoSync}){
 
   async function guardar(){
     setSaving(true);
-    const vencFecha=form.empamFecha
-      ?new Date(new Date(form.empamFecha).setFullYear(new Date(form.empamFecha).getFullYear()+1))
-          .toISOString().split('T')[0]:'';
+    const _baseEmpam=parseDateLocal(form.empamFecha);
+    const vencFecha=_baseEmpam
+      ?`${_baseEmpam.getFullYear()+1}-${String(_baseEmpam.getMonth()+1).padStart(2,'0')}-${String(_baseEmpam.getDate()).padStart(2,'0')}`
+      :'';
     const newP={
       ...form, id:genId(form.nombre,form.rut),
       nombre:form.nombre.trim().toUpperCase(), rut:form.rut.trim(),
@@ -1822,7 +1839,7 @@ function ViewFicha({patient,patients,setPatients,toast,attendanceLog}){
           `Resultado: ${patient.empamPre||'—'} → ${patient.empamPost||'—'}`),
         patient.empamFecha&&React.createElement('div',{style:{fontSize:12,color:'#777',marginTop:4}},
           `Vence: ${formatDate(patient.empamFecha)}${patient.empamDias!==null?
-           ` (${patient.empamDias>0?patient.empamDias+' días':'VENCIDO'})`:''}`))
+           ` (${patient.empamDias>0?patient.empamDias+' día'+(patient.empamDias===1?'':'s'):patient.empamDias===0?'vence hoy':'VENCIDO'})`:''}`))
     ),
 
     // CLÍNICO

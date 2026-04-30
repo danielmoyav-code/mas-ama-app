@@ -435,49 +435,56 @@ function normTaller(raw) {
 }
 
 // ── Calcular estado EMPAM desde fecha de vencimiento ─────────────
+// Todas las comparaciones usan la fecha en zona América/Santiago para evitar
+// desfases UTC que marquen VENCIDO un día antes del vencimiento real.
 function calcEmpamEstado(codigoInterno, vigenciaRaw) {
-  // Si no hay fecha, es pendiente
   if (vigenciaRaw === '' || vigenciaRaw === null || vigenciaRaw === undefined) return 'PENDIENTE';
 
-  // Manejo "Prox. MAY" o "Prox. ENE" etc.
-  var proxMatch = String(vigenciaRaw).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
-  if (proxMatch) {
-    var meses = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
-    var mes = meses[proxMatch[1].toUpperCase()];
-    var fProxy = new Date(2026, mes - 1, 1);
-    var diasProxy = Math.round((fProxy - new Date()) / 86400000);
-    if (diasProxy < 0)   return 'VENCIDO';
-    if (diasProxy <= 30) return 'VENCE PRONTO';
-    return 'VIGENTE';
+  // Hoy en zona Santiago como string "YYYY-MM-DD"
+  var hoyStr = Utilities.formatDate(new Date(), 'America/Santiago', 'yyyy-MM-dd');
+
+  // Convierte dos strings "YYYY-MM-DD" a días de diferencia (fecha - hoy), midnight local
+  function diasEntre(fechaStr, hoyS) {
+    var fp = fechaStr.split('-').map(Number);
+    var hp = hoyS.split('-').map(Number);
+    var fd = new Date(fp[0], fp[1]-1, fp[2]);
+    var hd = new Date(hp[0], hp[1]-1, hp[2]);
+    return Math.round((fd - hd) / 86400000);
   }
 
-  // Número serial de Excel (fecha como número)
-  var n = Number(vigenciaRaw);
-  if (!isNaN(n) && n > 40000) {
-    var fecha = new Date((n - 25569) * 86400000);
-    var dias  = Math.round((fecha - new Date()) / 86400000);
+  function evalStr(fechaStr) {
+    if (!fechaStr || fechaStr.length < 10) return 'PENDIENTE';
+    var dias = diasEntre(fechaStr.slice(0,10), hoyStr);
     if (dias < 0)   return 'VENCIDO';
     if (dias <= 30) return 'VENCE PRONTO';
     return 'VIGENTE';
   }
 
-  // String de fecha (ISO o similar)
-  if (typeof vigenciaRaw === 'string' && vigenciaRaw.length > 4) {
-    var d = new Date(vigenciaRaw);
-    if (!isNaN(d)) {
-      var dias2 = Math.round((d - new Date()) / 86400000);
-      if (dias2 < 0)   return 'VENCIDO';
-      if (dias2 <= 30) return 'VENCE PRONTO';
-      return 'VIGENTE';
-    }
+  // "Prox. MAY" o similar
+  var proxMatch = String(vigenciaRaw).match(/Prox\.?\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)/i);
+  if (proxMatch) {
+    var meses = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
+    var mes = meses[proxMatch[1].toUpperCase()];
+    var s = '2026-' + String(mes).padStart(2,'0') + '-01';
+    return evalStr(s);
   }
 
-  // Si la fecha es un objeto Date de Sheets
+  // Serial Excel (número > 40000)
+  var n = Number(vigenciaRaw);
+  if (!isNaN(n) && n > 40000) {
+    var fechaStr = Utilities.formatDate(new Date((n - 25569) * 86400000), 'America/Santiago', 'yyyy-MM-dd');
+    return evalStr(fechaStr);
+  }
+
+  // Objeto Date de Sheets (caso más común — Sheets entrega Date para celdas de fecha)
   if (vigenciaRaw instanceof Date) {
-    var dias3 = Math.round((vigenciaRaw - new Date()) / 86400000);
-    if (dias3 < 0)   return 'VENCIDO';
-    if (dias3 <= 30) return 'VENCE PRONTO';
-    return 'VIGENTE';
+    var fechaStr = Utilities.formatDate(vigenciaRaw, 'America/Santiago', 'yyyy-MM-dd');
+    return evalStr(fechaStr);
+  }
+
+  // String ISO "YYYY-MM-DD" o similar
+  if (typeof vigenciaRaw === 'string' && vigenciaRaw.length >= 10) {
+    return evalStr(vigenciaRaw);
   }
 
   return 'PENDIENTE';
