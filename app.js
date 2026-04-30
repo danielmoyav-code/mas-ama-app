@@ -64,7 +64,7 @@ const TODAY = new Date();
 // ─────────────────────────────────────────────────────────────────────
 // UTILS
 // ─────────────────────────────────────────────────────────────────────
-function todayISO(){ return TODAY.toISOString().split('T')[0]; }
+function todayISO(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // Parsea "YYYY-MM-DD" como midnight LOCAL para evitar el desfase UTC en Chile.
 // new Date("YYYY-MM-DD") = UTC midnight → en Chile (UTC-3/4) muestra el día anterior.
 function parseDateLocal(s){
@@ -2493,7 +2493,8 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
               if(!file) return;
               toast('⏳ Procesando Excel...');
               try{
-                const result=await parseMaestroExcel(file);
+                const raw=await parseMaestroExcel(file);
+                const result=refreshEmpam(raw);
                 setPatients(result);
                 DB.set('patients',result);
                 toast('✅ '+result.length+' pacientes importados');
