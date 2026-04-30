@@ -61,6 +61,17 @@ function doGet(e) {
     return handleAdminCommand(p.cmd, p.val);
   }
 
+  // ── Diagnóstico EMPAM (para verificar que las fechas sean correctas) ─
+  if (p.action === 'empam') {
+    try {
+      var r = diagnosticoEmpam();
+      r.status = 'ok';
+      return output(r);
+    } catch(err) {
+      return output({ status: 'error', message: err.toString() });
+    }
+  }
+
   // ── Datos normales ────────────────────────────────────────────────
   try {
     var result = construirDatos();
@@ -118,6 +129,106 @@ function testScript() {
   Logger.log('📊 Presencias muestra: ' + JSON.stringify(result._debug.presenciasMuestra));
 }
 
+// ── Detectar columnas de Gestión dinámicamente desde la cabecera ──
+// Esto evita que se rompa si alguien mueve o inserta columnas en el Excel.
+// Siempre fallback a los índices C hardcodeados si no se encuentra por nombre.
+function detectarColumnasGestion(headers) {
+  function col(opts, fallback) {
+    var idx = buscarCol(headers, opts);
+    return idx >= 0 ? idx : fallback;
+  }
+  return {
+    CICLO:      col(['CICLO'],                                          C.CICLO),
+    ESTADO:     col(['ESTADO','ESTADO PROGRAMA'],                       C.ESTADO),
+    TALLER:     col(['DETALLE ESTADO','TALLER ASIGNADO','TALLER','GRUPO'], C.TALLER),
+    NOMBRE:     col(['NOMBRE','NOMBRE COMPLETO','APELLIDOS Y NOMBRE'],  C.NOMBRE),
+    RUT:        col(['RUT','RUN','RUT PACIENTE','RUT_PLANILLA'],         C.RUT),
+    FONO:       col(['FONO','TELEFONO','CELULAR','TEL'],                 C.FONO),
+    SEXO:       col(['SEXO'],                                           C.SEXO),
+    EDAD:       col(['EDAD'],                                           C.EDAD),
+    HTA:        col(['HTA','HIPERTENSION'],                             C.HTA),
+    ECV:        col(['ECV'],                                            C.ECV),
+    DM:         col(['DM','DIABETES'],                                  C.DM),
+    DMIR:       col(['DMIR'],                                           C.DMIR),
+    RESP:       col(['RESP','RESPIRATORIO'],                            C.RESP),
+    CAID:       col(['CAID','CAIDA'],                                   C.CAID),
+    PREVISION:  col(['PREVISION','PREVISIÓN'],                          C.PREVISION),
+    // ── EMPAM — los más críticos ──────────────────────────────────────
+    EMPAM_EST:  col(['EMPAM EST','EMPAM_EST','RESULTADO EMPAM','EMPAM PRE',
+                     'CODIGO EMPAM','EMPAM (PRE)','CLASIFICACION EMPAM',
+                     'ASR','EMPAM'],                                    C.EMPAM_EST),
+    EMPAM_VIG:  col(['VENC EMPAM','FECHA VENC EMPAM','FECHA VENCIMIENTO EMPAM',
+                     'VENCIMIENTO EMPAM','VIGENCIA EMPAM','FECHA EMPAM',
+                     'PROX EMPAM','PROX. EMPAM','FECHA VIG','VIG EMPAM',
+                     'FECHA RENOVACION EMPAM','FECHA PROX EMPAM'],      C.EMPAM_VIG),
+    // ── Evaluaciones ─────────────────────────────────────────────────
+    TUG_PRE:    col(['TUG PRE','TUG_PRE','TUG (PRE)'],                 C.TUG_PRE),
+    TUG_POST:   col(['TUG POST','TUG_POST','TUG (POST)'],              C.TUG_POST),
+    CAT_I:      col(['CAT INTERNA','CAT_I','CAT I'],                   C.CAT_I),
+    CAT_E:      col(['CAT EXTERNA','CAT_E','CAT E'],                   C.CAT_E),
+    EUP_D_PRE:  col(['EUP DER PRE','EUP D PRE','EUP_D_PRE'],          C.EUP_D_PRE),
+    EUP_I_PRE:  col(['EUP IZQ PRE','EUP I PRE','EUP_I_PRE'],          C.EUP_I_PRE),
+    EUP_D_POST: col(['EUP DER POST','EUP D POST','EUP_D_POST'],        C.EUP_D_POST),
+    EUP_I_POST: col(['EUP IZQ POST','EUP I POST','EUP_I_POST'],        C.EUP_I_POST),
+    HAQ_PRE:    col(['HAQ PRE','HAQ_PRE'],                             C.HAQ_PRE),
+    HAQ_POST:   col(['HAQ POST','HAQ_POST'],                           C.HAQ_POST),
+    RES_TUG:    col(['RES TUG','RESULTADO TUG','RES_TUG'],             C.RES_TUG),
+    RES_EUP_D:  col(['RES EUP DER','RES_EUP_D'],                      C.RES_EUP_D),
+    RES_EUP_I:  col(['RES EUP IZQ','RES_EUP_I'],                      C.RES_EUP_I),
+    EMPAM_RES:  col(['EMPAM RES','EMPAM POST','EMPAM (POST)','RESULTADO FINAL EMPAM'], C.EMPAM_RES),
+    PRES_TOT:   col(['TOTAL PRESENCIAS','PRESENCIAS TOTAL','TOTAL','N PRESENCIAS',
+                     'ASISTENCIA TOTAL','PRES TOT'],                   C.PRES_TOT),
+  };
+}
+
+// ── Diagnóstico EMPAM: muestra las primeras filas con sus fechas raw ─
+// Llamar con: ?action=empam   (sin secreto, solo lectura)
+function diagnosticoEmpam() {
+  var ssG    = SpreadsheetApp.openById(GESTION_ID);
+  var hojaG  = ssG.getSheetByName('PLANILLA') || ssG.getSheets()[1];
+  var datosG = hojaG.getDataRange().getValues();
+  var headG  = datosG[0].map(function(h){ return limpiar(h); });
+  var GC     = detectarColumnasGestion(headG);
+
+  // Cabecera completa para diagnóstico (primeras 100 cols)
+  var cabecera = datosG[0].slice(0, 100).map(function(h, i){
+    return { i: i, nombre: String(h || '').trim() };
+  }).filter(function(x){ return x.nombre; });
+
+  // Muestra de los primeros 10 pacientes con datos crudos
+  var muestra = [];
+  for (var i = 1; i < datosG.length && muestra.length < 10; i++) {
+    var r      = datosG[i];
+    var rut    = normRut(str(r, GC.RUT));
+    var nombre = str(r, GC.NOMBRE);
+    if (!nombre && !rut) continue;
+    var vigRaw = r[GC.EMPAM_VIG];
+    muestra.push({
+      nombre:       nombre,
+      rut:          rut,
+      colEmpamVig:  GC.EMPAM_VIG,
+      colEmpamEst:  GC.EMPAM_EST,
+      empamEstRaw:  str(r, GC.EMPAM_EST),
+      empamVigRaw:  vigRaw === null || vigRaw === undefined ? 'null' : String(vigRaw),
+      empamFechaNorm: normFecha(vigRaw),
+      empamEstado:  calcEmpamEstado(str(r, GC.EMPAM_EST), vigRaw),
+      // Filas adyacentes para comparar si el índice está desplazado
+      col30: r[30] !== null && r[30] !== undefined ? String(r[30]).slice(0,30) : '',
+      col31: r[31] !== null && r[31] !== undefined ? String(r[31]).slice(0,30) : '',
+      col32: r[32] !== null && r[32] !== undefined ? String(r[32]).slice(0,30) : '',
+      col33: r[33] !== null && r[33] !== undefined ? String(r[33]).slice(0,30) : '',
+    });
+  }
+
+  return {
+    totalFilas:   datosG.length - 1,
+    colDetectada: { EMPAM_VIG: GC.EMPAM_VIG, EMPAM_EST: GC.EMPAM_EST },
+    colHardcoded: { EMPAM_VIG: C.EMPAM_VIG,  EMPAM_EST: C.EMPAM_EST  },
+    cabecera:     cabecera,
+    muestra:      muestra,
+  };
+}
+
 // ── Lógica principal ──────────────────────────────────────────────
 // Asistencia = fuente primaria de TALLER y LISTA DE PACIENTES
 // Gestión    = fuente de DATOS CLÍNICOS (EMPAM, comorbilidades, evaluaciones)
@@ -126,13 +237,15 @@ function construirDatos() {
   var ssG = SpreadsheetApp.openById(GESTION_ID);
   var ssA = SpreadsheetApp.openById(ASISTENCIA_ID);
 
-  // ── 1. Leer Gestión → mapa clínico por RUT ────────────────────────
+  // ── 1. Leer Gestión → mapa clínico por RUT (con detección dinámica) ─
   var hojaG  = ssG.getSheetByName('PLANILLA') || ssG.getSheets()[1];
   var datosG = hojaG.getDataRange().getValues();
+  var headG  = datosG[0].map(function(h){ return limpiar(h); });
+  var GC     = detectarColumnasGestion(headG);   // columnas detectadas por nombre
 
-  var gestionPorRut = {};   // RUT → fila completa de Gestión
+  var gestionPorRut = {};   // RUT → { fila, GC }
   for (var i = 1; i < datosG.length; i++) {
-    var rg = normRut(str(datosG[i], C.RUT));
+    var rg = normRut(str(datosG[i], GC.RUT));
     if (rg) gestionPorRut[rg] = datosG[i];
   }
 
@@ -178,21 +291,21 @@ function construirDatos() {
       var sexoAsis = iASexo >= 0 ? String(ra[iASexo] || '').trim().toUpperCase() : '';
       var edadAsis = iAEdad >= 0 ? String(ra[iAEdad] || '').trim() : '';
 
-      // Datos clínicos de Gestión (enriquecimiento por RUT)
-      var g          = rut ? gestionPorRut[rut] : null;
-      var vigenciaRaw = g ? g[C.EMPAM_VIG] : '';
-      var empamEstad  = calcEmpamEstado(g ? str(g, C.EMPAM_EST) : '', vigenciaRaw);
+      // Datos clínicos de Gestión (enriquecimiento por RUT, usando columnas detectadas dinámicamente)
+      var g           = rut ? gestionPorRut[rut] : null;
+      var vigenciaRaw = g ? g[GC.EMPAM_VIG] : '';
+      var empamEstad  = calcEmpamEstado(g ? str(g, GC.EMPAM_EST) : '', vigenciaRaw);
       var empamFecha  = normFecha(vigenciaRaw);
-      var fono        = (g ? normFono(str(g, C.FONO)) : '') || fonoAsis;
-      var estado      = g ? str(g, C.ESTADO) : 'TALLER';
+      var fono        = (g ? normFono(str(g, GC.FONO)) : '') || fonoAsis;
+      var estado      = g ? str(g, GC.ESTADO) : 'TALLER';
 
       // Si Asistencia no tiene nombre, lo tomamos de Gestión
-      if (!nombre && g) nombre = str(g, C.NOMBRE);
+      if (!nombre && g) nombre = str(g, GC.NOMBRE);
       if (!nombre) continue;
 
       talleres[taller]     = (talleres[taller] || 0) + 1;
       empamEst[empamEstad] = (empamEst[empamEstad] || 0) + 1;
-      if (presMuestra.length < 5) presMuestra.push({ nombre: nombre, pres: presencias, raw: presRaw });
+      if (presMuestra.length < 5) presMuestra.push({ nombre: nombre, empamFecha: empamFecha, empamEstado: empamEstad });
 
       pacientes.push({
         id:              'p' + j,
@@ -200,40 +313,40 @@ function construirDatos() {
         rut:             rut,
         taller:          taller,
         tallerRaw:       tallerRaw,
-        ciclo:           g ? str(g, C.CICLO)      : '',
+        ciclo:           g ? str(g, GC.CICLO)      : '',
         estado:          estado,
-        sexo:            (g ? str(g, C.SEXO)      : '') || sexoAsis,
-        edad:            (g ? str(g, C.EDAD)      : '') || edadAsis,
+        sexo:            (g ? str(g, GC.SEXO)      : '') || sexoAsis,
+        edad:            (g ? str(g, GC.EDAD)      : '') || edadAsis,
         fono:            fono,
-        prevision:       g ? str(g, C.PREVISION)  : 'FONASA',
-        hta:             g ? str(g, C.HTA)        : '',
-        ecv:             g ? str(g, C.ECV)        : '',
-        dm:              g ? str(g, C.DM)         : '',
-        dmir:            g ? str(g, C.DMIR)       : '',
-        resp:            g ? str(g, C.RESP)       : '',
-        caid:            g ? str(g, C.CAID)       : '',
+        prevision:       g ? str(g, GC.PREVISION)  : 'FONASA',
+        hta:             g ? str(g, GC.HTA)        : '',
+        ecv:             g ? str(g, GC.ECV)        : '',
+        dm:              g ? str(g, GC.DM)         : '',
+        dmir:            g ? str(g, GC.DMIR)       : '',
+        resp:            g ? str(g, GC.RESP)       : '',
+        caid:            g ? str(g, GC.CAID)       : '',
         empamEstado:     empamEstad,
         empamFecha:      empamFecha,
-        empamPre:        g ? str(g, C.EMPAM_EST)  : '',
-        empamPost:       g ? str(g, C.EMPAM_RES)  : '',
-        tugPre:          g ? str(g, C.TUG_PRE)    : '',
-        tugPost:         g ? str(g, C.TUG_POST)   : '',
-        catInt:          g ? str(g, C.CAT_I)      : '',
-        catExt:          g ? str(g, C.CAT_E)      : '',
-        eupDerPre:       g ? str(g, C.EUP_D_PRE)  : '',
-        eupIzqPre:       g ? str(g, C.EUP_I_PRE)  : '',
-        eupDerPost:      g ? str(g, C.EUP_D_POST) : '',
-        eupIzqPost:      g ? str(g, C.EUP_I_POST) : '',
-        haqPre:          g ? str(g, C.HAQ_PRE)    : '',
-        haqPost:         g ? str(g, C.HAQ_POST)   : '',
-        resTug:          g ? str(g, C.RES_TUG)    : '',
-        resEupDer:       g ? str(g, C.RES_EUP_D)  : '',
-        resEupIzq:       g ? str(g, C.RES_EUP_I)  : '',
+        empamPre:        g ? str(g, GC.EMPAM_EST)  : '',
+        empamPost:       g ? str(g, GC.EMPAM_RES)  : '',
+        tugPre:          g ? str(g, GC.TUG_PRE)    : '',
+        tugPost:         g ? str(g, GC.TUG_POST)   : '',
+        catInt:          g ? str(g, GC.CAT_I)      : '',
+        catExt:          g ? str(g, GC.CAT_E)      : '',
+        eupDerPre:       g ? str(g, GC.EUP_D_PRE)  : '',
+        eupIzqPre:       g ? str(g, GC.EUP_I_PRE)  : '',
+        eupDerPost:      g ? str(g, GC.EUP_D_POST) : '',
+        eupIzqPost:      g ? str(g, GC.EUP_I_POST) : '',
+        haqPre:          g ? str(g, GC.HAQ_PRE)    : '',
+        haqPost:         g ? str(g, GC.HAQ_POST)   : '',
+        resTug:          g ? str(g, GC.RES_TUG)    : '',
+        resEupDer:       g ? str(g, GC.RES_EUP_D)  : '',
+        resEupIzq:       g ? str(g, GC.RES_EUP_I)  : '',
         totalPresencias: presencias,
         totalSesiones:   20,
         pctAsistencia:   Math.round(presencias / 20 * 100),
         alertaAsist:     presencias < 20 ? 'BAJO' : 'OK',
-        sinFichaClinica: !g,   // true si no está en Gestión
+        sinFichaClinica: !g,
       });
     }
   }
@@ -243,32 +356,32 @@ function construirDatos() {
     Logger.log('⚠️ Asistencia vacía — usando solo Gestión como fallback');
     for (var k = 1; k < datosG.length; k++) {
       var r      = datosG[k];
-      var nombre = str(r, C.NOMBRE);
-      var rut    = normRut(str(r, C.RUT));
+      var nombre = str(r, GC.NOMBRE);
+      var rut    = normRut(str(r, GC.RUT));
       if (!nombre && !rut) continue;
-      var tallerRaw = str(r, C.TALLER);
+      var tallerRaw = str(r, GC.TALLER);
       var taller    = normTaller(tallerRaw);
-      var vigenciaRaw = r[C.EMPAM_VIG];
-      var presRaw     = r[C.PRES_TOT];
+      var vigenciaRaw = r[GC.EMPAM_VIG];
+      var presRaw     = r[GC.PRES_TOT];
       var presencias  = (!isNaN(Number(presRaw)) && presRaw !== '') ? Math.round(Number(presRaw)) : 0;
-      var empamEstad  = calcEmpamEstado(str(r, C.EMPAM_EST), vigenciaRaw);
+      var empamEstad  = calcEmpamEstado(str(r, GC.EMPAM_EST), vigenciaRaw);
       talleres[taller]     = (talleres[taller] || 0) + 1;
       empamEst[empamEstad] = (empamEst[empamEstad] || 0) + 1;
       pacientes.push({
         id: 'g' + k, nombre: nombre, rut: rut, taller: taller, tallerRaw: tallerRaw,
-        ciclo: str(r, C.CICLO), estado: str(r, C.ESTADO),
-        sexo: str(r, C.SEXO), edad: str(r, C.EDAD),
-        fono: normFono(str(r, C.FONO)), prevision: str(r, C.PREVISION),
-        hta: str(r, C.HTA), ecv: str(r, C.ECV), dm: str(r, C.DM),
-        dmir: str(r, C.DMIR), resp: str(r, C.RESP), caid: str(r, C.CAID),
+        ciclo: str(r, GC.CICLO), estado: str(r, GC.ESTADO),
+        sexo: str(r, GC.SEXO), edad: str(r, GC.EDAD),
+        fono: normFono(str(r, GC.FONO)), prevision: str(r, GC.PREVISION),
+        hta: str(r, GC.HTA), ecv: str(r, GC.ECV), dm: str(r, GC.DM),
+        dmir: str(r, GC.DMIR), resp: str(r, GC.RESP), caid: str(r, GC.CAID),
         empamEstado: empamEstad, empamFecha: normFecha(vigenciaRaw),
-        empamPre: str(r, C.EMPAM_EST), empamPost: str(r, C.EMPAM_RES),
-        tugPre: str(r, C.TUG_PRE), tugPost: str(r, C.TUG_POST),
-        catInt: str(r, C.CAT_I), catExt: str(r, C.CAT_E),
-        eupDerPre: str(r, C.EUP_D_PRE), eupIzqPre: str(r, C.EUP_I_PRE),
-        eupDerPost: str(r, C.EUP_D_POST), eupIzqPost: str(r, C.EUP_I_POST),
-        haqPre: str(r, C.HAQ_PRE), haqPost: str(r, C.HAQ_POST),
-        resTug: str(r, C.RES_TUG), resEupDer: str(r, C.RES_EUP_D), resEupIzq: str(r, C.RES_EUP_I),
+        empamPre: str(r, GC.EMPAM_EST), empamPost: str(r, GC.EMPAM_RES),
+        tugPre: str(r, GC.TUG_PRE), tugPost: str(r, GC.TUG_POST),
+        catInt: str(r, GC.CAT_I), catExt: str(r, GC.CAT_E),
+        eupDerPre: str(r, GC.EUP_D_PRE), eupIzqPre: str(r, GC.EUP_I_PRE),
+        eupDerPost: str(r, GC.EUP_D_POST), eupIzqPost: str(r, GC.EUP_I_POST),
+        haqPre: str(r, GC.HAQ_PRE), haqPost: str(r, GC.HAQ_POST),
+        resTug: str(r, GC.RES_TUG), resEupDer: str(r, GC.RES_EUP_D), resEupIzq: str(r, GC.RES_EUP_I),
         totalPresencias: presencias, totalSesiones: 20,
         pctAsistencia: Math.round(presencias / 20 * 100),
         alertaAsist: presencias < 20 ? 'BAJO' : 'OK',
@@ -291,10 +404,12 @@ function construirDatos() {
     wipe: wipe,
     lock: lock,
     _debug: {
-      totalPacientes:   pacientes.length,
-      talleres:         talleres,
-      empamEstados:     empamEst,
-      presenciasMuestra: presMuestra,
+      totalPacientes:    pacientes.length,
+      talleres:          talleres,
+      empamEstados:      empamEst,
+      colDetectada:      { EMPAM_VIG: GC.EMPAM_VIG, EMPAM_EST: GC.EMPAM_EST, RUT: GC.RUT, NOMBRE: GC.NOMBRE, FONO: GC.FONO },
+      colHardcoded:      { EMPAM_VIG: C.EMPAM_VIG,  EMPAM_EST: C.EMPAM_EST  },
+      muestraEmpam:      presMuestra,
     }
   };
 }
