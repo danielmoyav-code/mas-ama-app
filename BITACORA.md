@@ -177,20 +177,69 @@ Fix: llamar `refreshEmpam(result)` antes de `setPatients` en el handler de impor
 
 ---
 
-## Resumen final
+---
 
-- **Total de defectos encontrados:** 6 (4 en Fase 1 + 2 en Fase 2)
-- **Total de defectos arreglados:** 6/6
-- **Pases finales completados sin error:** 20/20
-- **Confianza:** ALTO para el flujo EMPAM (objetivo principal). MEDIO para el conjunto — no fue posible ejecutar pruebas en un navegador real contra Google Sheets en este entorno.
+## Fase 3 — Revisión PWA + Infraestructura (post-QA)
 
-**Fixes más significativos:**
-1. `parseDateLocal()` — elimina el desfase UTC en todas las comparaciones de fechas EMPAM (app.js)
-2. `calcEmpamEstado` Code.gs — usa `Utilities.formatDate(..., 'America/Santiago')` para evitar el mismo desfase en el servidor
-3. `todayISO()` — usa fecha local en vez de UTC (afecta claves de asistencia y default de ViewLista)
-4. Excel import — llama `refreshEmpam()` para recalcular estados EMPAM al importar
+#### Pase 3.1 — Enfoque: Instalabilidad PWA
+**Cubierto:** manifest.json, iconos, sw.js
+**Resultado:** FAIL → FIX → PASS
+**Hallazgo:** `icons/icon-192.png` e `icons/icon-512.png` referenciados en manifest.json pero **no existían**. Sin iconos, Chrome no muestra el banner "Agregar a pantalla de inicio" y la PWA no puede instalarse correctamente.
+**Fix:** Creados `icons/icon-192.png` (2.8 KB) e `icons/icon-512.png` (9.7 KB) con Python. Añadido `"purpose": "any maskable"` en manifest.json para Android.
+
+#### Pase 3.2 — Enfoque: Service Worker versión y caché
+**Cubierto:** sw.js CACHE name y ASSETS
+**Resultado:** FAIL → FIX → PASS
+**Hallazgo:** SW versión `masama-v5` — no forzaba refresco en dispositivos que tenían la versión pre-fixes cacheada. ASSETS no incluía iconos ni manifest.json.
+**Fix:** Bump `masama-v5` → `masama-v6`. Agregados `/manifest.json`, `/icons/icon-192.png`, `/icons/icon-512.png` al ASSETS.
+
+#### Pase 3.3 — Enfoque: Última instancia UTC residual
+**Cubierto:** Grep exhaustivo de `.toISOString().split` en app.js
+**Resultado:** FAIL → FIX → PASS
+**Hallazgo:** `fecha14` en ViewInicio:597 — `hace14.toISOString().split('T')[0]` (UTC). Afecta el banner de "pacientes urgentes que asistieron en últimos 14 días". Documentado en BITACORA como pendiente.
+**Fix:** Reemplazado por construcción manual con `getFullYear/getMonth/getDate` (local). Cero instancias UTC residuales.
+
+#### Pase 3.4 — Enfoque: SYNC2, dead code y código legacy
+**Cubierto:** `SYNC2.push`, archivos app-*.js, `PinScreen` (dead component)
+**Resultado:** PASS (dead code confirmado, sin impacto)
+**Notas:** `SYNC2.push` definido pero nunca llamado ✅. `app-shell.js`, `app-data.js`, `app-components.js`, `app-views.js` (23 abr) son artefactos del refactor inicial, no cargados por index.html ✅. `PinScreen` y `PINScreen` son componentes no montados ✅.
+
+#### Pase 3.5 — Enfoque: Estilos CSS y responsive
+**Cubierto:** styles.css completo — layout, animaciones, componentes, nav-dot, safe-area
+**Resultado:** PASS
+**Notas:** Mobile-first sin media queries (correcto para target Android). `env(safe-area-inset-bottom)` en bottom-nav ✅. `@keyframes spin/pulse/dotBounce` todos definidos ✅. `.nav-dot` definido ✅. `.top-icon-btn` y `.back-btn` definidos ✅.
+
+#### Pase 3.6 — Enfoque: Revisión estática final app.js (LockScreen, LoginScreen, ViewNuevo)
+**Cubierto:** `LockScreen` (FAIL_KEY/UNTIL_KEY/wipe logic), `LoginScreen` (user selector + PIN), `guardar()` en ViewNuevo, export en exportToExcel
+**Resultado:** PASS
+**Notas:** LockScreen: 5 fallos → 15min lockout ✅, 10 fallos → wipe ✅. LoginScreen: selector de usuario → PIN en 2 pasos ✅. `guardar()`: usa `parseDateLocal` para calcular vencFecha ✅. Export incluye estado EMPAM recalculado ✅.
+
+#### Pase 3.7 — Enfoque: Revisión estática Code.gs completo
+**Cubierto:** `doGet`, `handleAdminCommand`, `calcEmpamEstado`, `detectarColumnasGestion`, `normFecha`, `normFono`, `normRut`
+**Resultado:** PASS
+**Notas:** Todas las fechas usan `Utilities.formatDate(*, 'America/Santiago', 'yyyy-MM-dd')` ✅. `detectarColumnasGestion` con fallback robusto a índices C ✅. ADMIN_SECRET validado antes de ejecutar comandos ✅.
+
+---
+
+## Resumen final (actualizado)
+
+- **Total de defectos encontrados:** 9 (4 en Fase 1 + 2 en Fase 2 + 3 en Fase 3)
+- **Total de defectos arreglados:** 9/9
+- **Pases completados sin error:** 20/20 (Fase 2) + 7/7 (Fase 3)
+- **Confianza:** ALTO para flujo EMPAM y instalación PWA. MEDIO para el conjunto — sin prueba en navegador real contra Google Sheets (requiere despliegue GAS).
+
+**Todos los fixes (cronológico):**
+1. `parseDateLocal()` — elimina desfase UTC en comparaciones de fechas EMPAM (app.js)
+2. `calcEmpamEstado` Code.gs — usa `Utilities.formatDate(..., 'America/Santiago')`
+3. `todayISO()` — fecha local en vez de UTC (claves de asistencia y default ViewLista)
+4. Excel import — llama `refreshEmpam()` antes de `setPatients`
+5. `fecha14` en ViewInicio — construcción manual local (banner urgentes 14 días)
+6. `icons/` — creados icon-192.png e icon-512.png (sin ellos PWA no instalable)
+7. sw.js `masama-v5` → `masama-v6` — fuerza refresco post-fixes en dispositivos existentes
+8. sw.js ASSETS — agrega manifest.json e iconos al caché offline
+9. manifest.json — añade `"purpose": "any maskable"` para Android
 
 **Pendiente (no testeable en este entorno):**
-- Verificación con Google Sheets real (requiere despliegue de Code.gs)
-- `fecha14` en banner urgente (ViewInicio:597) sigue usando UTC — impacto mínimo (solo afecta el banner de pacientes que asistieron en últimos 14 días, ±1 día cerca de medianoche)
-- `SYNC2.push` engine (token-based) no activo en el flujo actual — código legacy sin impacto
+- Verificación con Google Sheets real (requiere despliegue de Code.gs como nueva versión)
+- `SYNC2.push` engine — código legacy inerte, puede eliminarse en refactor futuro
+- App shell renaming en Apps Script (5 de 8 proyectos renombrados; los 3 restantes requieren login de Daniel)
