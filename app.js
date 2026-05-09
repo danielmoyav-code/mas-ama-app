@@ -594,7 +594,7 @@ function ViewInicio({patients,attendanceLog,onNav,currentUser,autoSync,syncStatu
 
   // Pacientes VENCIDO que asistieron en los últimos 14 días
   const hace14 = new Date(); hace14.setDate(hace14.getDate()-14);
-  const fecha14 = hace14.toISOString().split('T')[0];
+  const fecha14 = `${hace14.getFullYear()}-${String(hace14.getMonth()+1).padStart(2,'0')}-${String(hace14.getDate()).padStart(2,'0')}`;
   const urgentesRecientes = patients.filter(p=>{
     if(!p.empamEstado?.includes('VENCIDO')) return false;
     return Object.entries(attendanceLog).some(([k,v])=>{
