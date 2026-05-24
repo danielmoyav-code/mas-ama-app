@@ -28,6 +28,7 @@ const DB = {
 // EMERGENCY WIPE — borra todo dato local y descarga el SW
 // ─────────────────────────────────────────────────────────────────────
 function emergencyWipe(){
+  try{ auditLog('emergency_wipe', 'app data borrada', 'security'); }catch{}
   try{ localStorage.clear(); }catch{}
   try{ sessionStorage.clear(); }catch{}
   try{
@@ -65,6 +66,8 @@ const TODAY = new Date();
 // UTILS
 // ─────────────────────────────────────────────────────────────────────
 function todayISO(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// Mes actual en formato YYYY-MM (zona horaria local)
+function monthISO(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
 // Parsea "YYYY-MM-DD" como midnight LOCAL para evitar el desfase UTC en Chile.
 // new Date("YYYY-MM-DD") = UTC midnight → en Chile (UTC-3/4) muestra el día anterior.
 function parseDateLocal(s){
@@ -152,6 +155,173 @@ function calcDias(fecha){
     const hoy=new Date(); hoy.setHours(0,0,0,0);
     return Math.round((d-hoy)/86400000);
   }catch{ return null; }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// ACCESSIBILITY MODE — toggle modo "alto contraste / texto grande" para AM
+// ─────────────────────────────────────────────────────────────────────
+function applyAccessibilityMode(enabled){
+  try{
+    if(enabled) document.documentElement.setAttribute('data-mode','accessible');
+    else document.documentElement.removeAttribute('data-mode');
+    DB.set('accessibilityMode', !!enabled);
+  }catch(e){ console.warn('[a11y]', e); }
+}
+function loadAccessibilityModeOnInit(){
+  try{
+    if(DB.get('accessibilityMode', false)) applyAccessibilityMode(true);
+  }catch{}
+}
+loadAccessibilityModeOnInit();
+
+// ─────────────────────────────────────────────────────────────────────
+// AUDIT LOG — registro local de eventos críticos para trazabilidad
+// Eventos: pacienteNuevo, pacienteEditado, sync, login, logout, wipe,
+//          import, export, configChange
+// ─────────────────────────────────────────────────────────────────────
+function auditLog(action, detail, kind='info'){
+  try{
+    const log = DB.get('auditLog', []);
+    const entry = {
+      ts: new Date().toISOString(),
+      action: String(action||'evento'),
+      detail: String(detail||''),
+      kind, // info|create|edit|delete|security
+      user: (DB.get('currentUser',null)||{}).nombre || '?',
+    };
+    log.push(entry);
+    // Mantener solo los últimos 500 eventos para no saturar localStorage
+    if(log.length > 500) log.splice(0, log.length-500);
+    DB.set('auditLog', log);
+  }catch(e){ console.warn('[audit]', e); }
+}
+function getAuditLog(limit=100){
+  try{ return DB.get('auditLog', []).slice(-limit).reverse(); }catch{ return []; }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// WHATSAPP — plantillas profesionales con interpolación
+// ─────────────────────────────────────────────────────────────────────
+const WSP_TEMPLATES = {
+  empamVencido: (p) =>
+    `Hola ${p.nombre.split(' ')[0]} 👋\n\n` +
+    `Le escribo desde el CESFAM Félix de Amesti. Su EMPAM venció el ${formatDate(p.empamFecha)}. ` +
+    `Es importante que agendemos su renovación lo antes posible.\n\n` +
+    `¿Podemos coordinar día y hora? 🙏\n\n— Programa MAS AMA`,
+  empamProximo: (p) =>
+    `Hola ${p.nombre.split(' ')[0]} 👋\n\n` +
+    `Le recuerdo que su EMPAM vence el ${formatDate(p.empamFecha)} (en ${p.empamDias} día${p.empamDias===1?'':'s'}). ` +
+    `Para mantener su programa activo necesitamos renovarlo a tiempo.\n\n` +
+    `¿Coordinamos una hora? 🙏\n\n— CESFAM Félix de Amesti · MAS AMA`,
+  asistenciaBaja: (p) =>
+    `Hola ${p.nombre.split(' ')[0]} 👋\n\n` +
+    `Lo hemos echado de menos en el taller ${p.taller || ''}. ` +
+    `Ha asistido a ${p.totalPresencias||0} de ${p.totalSesiones||24} sesiones.\n\n` +
+    `¿Hay algo que podamos ayudarle a resolver para que vuelva? 💙\n\n— Programa MAS AMA`,
+  recordatorioSesion: (p, fechaSesion) =>
+    `Hola ${p.nombre.split(' ')[0]} 👋\n\n` +
+    `Le recuerdo que mañana ${fechaSesion} tenemos sesión del taller ${p.taller || 'MAS AMA'}. ` +
+    `¡Lo/la esperamos!\n\n— CESFAM Félix de Amesti`,
+  bienvenida: (p) =>
+    `¡Hola ${p.nombre.split(' ')[0]}! 🌟\n\n` +
+    `Bienvenido/a al Programa MAS AMA del CESFAM Félix de Amesti. ` +
+    `Su taller asignado es: ${p.taller || 'por confirmar'}.\n\n` +
+    `Cualquier duda, estamos para apoyarle. 💙`,
+};
+function buildWspTemplate(p, templateKey, extra){
+  const tpl = WSP_TEMPLATES[templateKey];
+  if(!tpl) return '';
+  try{ return tpl(p, extra); }catch{ return ''; }
+}
+function openWhatsApp(fono, msg){
+  if(!fono) return;
+  const num = String(fono).replace(/\D/g,'');
+  const finalNum = num.startsWith('56') ? num : `56${num}`;
+  const url = `https://wa.me/${finalNum}?text=${encodeURIComponent(msg||'')}`;
+  try{ window.open(url, '_blank'); }catch{ window.location.href = url; }
+  auditLog('whatsapp_enviado', `${finalNum}: ${msg.slice(0,40)}...`, 'info');
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PUSH NOTIFICATIONS — Web Push API (W3C estándar, gratis)
+// ─────────────────────────────────────────────────────────────────────
+// Clave pública VAPID — placeholder; Daniel debe generar el par real con:
+//   npx web-push generate-vapid-keys
+// La clave privada va en el script GAS (PropertiesService.setProperty('VAPID_PRIVATE',...))
+const VAPID_PUBLIC_KEY = '';  // ← rellenar tras generar las claves
+
+function urlBase64ToUint8Array(b64){
+  const padding = '='.repeat((4 - b64.length % 4) % 4);
+  const base64 = (b64 + padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i);
+  return out;
+}
+async function pushSetup(scriptUrl, userName){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    console.warn('[push] Browser no soporta Push API');
+    return { ok:false, reason:'no-support' };
+  }
+  if(!VAPID_PUBLIC_KEY){
+    console.warn('[push] VAPID_PUBLIC_KEY no configurado');
+    return { ok:false, reason:'no-vapid-key' };
+  }
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted') return { ok:false, reason:'permission-denied' };
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    // Enviar suscripción al GAS
+    if(scriptUrl){
+      const body = new URLSearchParams({
+        action: 'subscribe',
+        user: userName || '?',
+        subscription: JSON.stringify(sub),
+      });
+      // no-cors fire-and-forget (GAS POST necesita esto)
+      await fetch(scriptUrl, { method:'POST', body, mode:'no-cors' }).catch(()=>{});
+    }
+    auditLog('push_suscrito', userName||'?', 'security');
+    return { ok:true, subscription: sub };
+  }catch(e){
+    console.warn('[push] error', e);
+    return { ok:false, reason:e.message };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BACKUP A DRIVE — vía endpoint GAS
+// ─────────────────────────────────────────────────────────────────────
+async function backupToDrive(scriptUrl, userName){
+  if(!scriptUrl) return { ok:false, reason:'no-url' };
+  try{
+    const snapshot = {
+      version: 'v6',
+      generatedAt: new Date().toISOString(),
+      user: userName || '?',
+      patients: DB.get('patients', []),
+      attendanceLog: DB.get('attendanceLog', {}),
+      sessionLog: DB.get('sessionLog', {}),
+      sessionNotes: DB.get('sessionNotes', {}),
+    };
+    const body = new URLSearchParams({
+      action: 'backup',
+      user: userName || '?',
+      snapshot: JSON.stringify(snapshot),
+    });
+    await fetch(scriptUrl, { method:'POST', body, mode:'no-cors' });
+    auditLog('backup_drive', `${snapshot.patients.length} pacientes`, 'security');
+    return { ok:true, count: snapshot.patients.length };
+  }catch(e){
+    return { ok:false, reason:e.message };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1466,6 +1636,7 @@ function ViewNuevo({patients,setPatients,toast,onBack,doSync,autoSync}){
       p.rut === newP.rut ? SYNC2.markDirty(p) : p
     );
     setPatients(updatedDirty); DB.set('patients', updatedDirty);
+    auditLog(existing?'paciente_editado':'paciente_nuevo', `${newP.nombre} (${newP.rut})`, existing?'edit':'create');
     toast(existing?'✅ Paciente actualizado':'✅ Paciente registrado correctamente');
     if(autoSync?.url) setTimeout(()=>doSync(true), 1500);
     setSaving(false); onBack();
@@ -2205,7 +2376,7 @@ function ViewAlertas({patients,onPatient}){
 // VIEW: EXPORTAR
 // ─────────────────────────────────────────────────────────────────────
 function ViewExportar({patients,attendanceLog,toast}){
-  const [month,setMonth]=useState(new Date().toISOString().slice(0,7));
+  const [month,setMonth]=useState(monthISO());
   const newPats=patients.filter(p=>p.isNew).length;
   const attCount=Object.keys(attendanceLog).length;
 
@@ -2314,7 +2485,7 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
       TUG_PRE:p.tugPre, HAQ_PRE:p.haqPre, FONO:p.fono,
     })));
     XLSX.utils.book_append_sheet(wb, ws1, 'MAESTRO');
-    const fecha = new Date().toISOString().slice(0,10);
+    const fecha = todayISO();
     XLSX.writeFile(wb, `MAS_AMA_Respaldo_${fecha}.xlsx`);
     toast('✅ Excel descargado — guárdalo en Drive');
   }
@@ -2372,11 +2543,97 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
         ))
       ),
 
+      // ── Accesibilidad ────────────────────────────────────────────────
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'🔍 Accesibilidad'),
+        React.createElement('div',{style:{fontSize:13,color:'#666',marginBottom:10,lineHeight:1.4}},
+          'Aumenta tamaño de texto y contraste para mejor lectura.'),
+        (()=>{
+          const enabled = DB.get('accessibilityMode', false);
+          return React.createElement('button',{
+            className:`btn ${enabled?'btn-primary':'btn-ghost'}`,
+            onClick:()=>{
+              const next = !enabled;
+              applyAccessibilityMode(next);
+              auditLog('a11y_toggle', next?'ON':'OFF', 'info');
+              toast(next?'✅ Modo accesible activado':'✅ Modo normal');
+              // Forzar re-render simple
+              setTab(t=>t);
+            }
+          }, enabled ? '✅ Modo accesible activo — desactivar' : '🔍 Activar modo accesible');
+        })()
+      ),
+
+      // ── Backup a Drive ──────────────────────────────────────────────
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'☁️ Respaldo en Drive'),
+        React.createElement('div',{style:{fontSize:13,color:'#666',marginBottom:10,lineHeight:1.4}},
+          'Guarda un respaldo JSON de toda la data en Google Drive. Protege contra pérdida del celular.'),
+        React.createElement('button',{
+          className:'btn btn-primary',
+          onClick: async ()=>{
+            const u = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
+            if(!u){ toast('⚠️ Configura primero la URL del script'); return; }
+            toast('⏳ Enviando respaldo a Drive...');
+            const r = await backupToDrive(u, userSession?.nombre);
+            if(r.ok) toast(`✅ Respaldo subido (${r.count} pacientes)`);
+            else toast(`❌ Error: ${r.reason||'desconocido'}`);
+          }
+        }, '☁️ Crear respaldo ahora')
+      ),
+
+      // ── Push Notifications ───────────────────────────────────────────
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'🔔 Notificaciones push'),
+        React.createElement('div',{style:{fontSize:13,color:'#666',marginBottom:10,lineHeight:1.4}},
+          VAPID_PUBLIC_KEY
+            ? 'Recibe avisos automáticos de EMPAM próximos a vencer.'
+            : '⚠️ Daniel debe generar las claves VAPID (instrucciones en MEJORAS.md).'),
+        React.createElement('button',{
+          className:'btn '+(VAPID_PUBLIC_KEY?'btn-primary':'btn-ghost'),
+          disabled: !VAPID_PUBLIC_KEY,
+          onClick: async ()=>{
+            const u = DB.get('scriptUrl','') || SCRIPT_URL_EMBEDDED;
+            toast('⏳ Solicitando permiso...');
+            const r = await pushSetup(u, userSession?.nombre);
+            if(r.ok) toast('✅ Notificaciones activadas');
+            else toast(`❌ ${r.reason||'error'}`);
+          }
+        }, VAPID_PUBLIC_KEY ? '🔔 Activar notificaciones' : '⚠️ No configurado')
+      ),
+
+      // ── Audit Log ───────────────────────────────────────────────────
+      React.createElement('div',{className:'card'},
+        React.createElement('div',{className:'card-title'},'📜 Registro de eventos'),
+        React.createElement('div',{style:{fontSize:13,color:'#666',marginBottom:10,lineHeight:1.4}},
+          `${getAuditLog(500).length} eventos registrados localmente.`),
+        React.createElement('details',{style:{marginTop:8}},
+          React.createElement('summary',{style:{cursor:'pointer',fontWeight:700,fontSize:13,color:'#1A3A5C'}},
+            'Ver últimos 30 eventos'),
+          React.createElement('div',{style:{maxHeight:300,overflowY:'auto',marginTop:10}},
+            getAuditLog(30).map((ev,i)=>{
+              const dt = new Date(ev.ts);
+              const hora = dt.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+              const fec = dt.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'});
+              return React.createElement('div',{key:i,className:`audit-item ${ev.kind||'info'}`},
+                React.createElement('div',{className:'audit-content'},
+                  React.createElement('div',{className:'audit-action'},
+                    `${ev.action} — ${ev.user||'?'}`),
+                  ev.detail && React.createElement('div',{className:'audit-detail'},ev.detail)
+                ),
+                React.createElement('div',{className:'audit-time'},`${fec} ${hora}`)
+              );
+            })
+          )
+        )
+      ),
+
       React.createElement('button',{
         className:'btn btn-ghost',
         onClick:()=>{
           DB.del('userSession');
           sessionStorage.removeItem('masama_unlocked');
+          auditLog('logout', userSession?.nombre||'?', 'security');
           window.location.reload();
         }
       },'🔒 Cerrar sesión')
@@ -2497,8 +2754,9 @@ function ViewConfig({patients,setPatients,toast,syncConfig,setSyncConfig,userSes
                 const result=refreshEmpam(raw);
                 setPatients(result);
                 DB.set('patients',result);
+                auditLog('excel_importado', `${result.length} pacientes`, 'create');
                 toast('✅ '+result.length+' pacientes importados');
-              }catch(err){ toast('❌ Error: '+err); }
+              }catch(err){ auditLog('excel_error', String(err), 'security'); toast('❌ Error: '+err); }
               e.target.value='';
             }
           })
@@ -2910,7 +3168,7 @@ function ViewRayen({ patients, attendanceLog, toast }) {
   const [selTaller, setTaller]    = useState('');
   const [selFecha, setFecha]      = useState(todayISO());
   const [selTipo, setTipo]        = useState('sesion');
-  const [selMes, setMes]          = useState(new Date().toISOString().slice(0, 7));
+  const [selMes, setMes]          = useState(monthISO());
   const [fichaPatient, setFicha]  = useState(null);
   const [showGrupal, setGrupal]   = useState(false);
   const [search, setSearch]       = useState('');
@@ -4027,7 +4285,7 @@ function calcularREM(patients, attendanceLog, mes) {
 
 // ── VIEW: REM ─────────────────────────────────────────────────────────
 function ViewREM({ patients, attendanceLog, toast }) {
-  const [mes, setMes]     = useState(new Date().toISOString().slice(0,7));
+  const [mes, setMes]     = useState(monthISO());
   const [copied, setCopied] = useState(false);
 
   const rem = calcularREM(patients, attendanceLog, mes);
@@ -4566,7 +4824,7 @@ const SYNC2 = {
   // Envía solo pacientes sucios + asistencia de hoy. No-cors fire-and-forget.
   push: async (patients, attendanceLog, scriptUrl, userName) => {
     const token = `${userName}_${Date.now()}`;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
 
     const dirty = SYNC2.getDirty(patients);
     const attHoy = Object.entries(attendanceLog || {})
@@ -5732,6 +5990,7 @@ function App(){
       setUnlocked(true);
       lastActivityRef.current = Date.now();
       try{ sessionStorage.setItem('masama_unlocked','1'); }catch{}
+      auditLog('login', user.nombre, 'security');
       // Sync inmediato al iniciar sesión
       setTimeout(()=>doSync(true), 300);
     },

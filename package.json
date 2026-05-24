@@ -1,0 +1,25 @@
+{
+  "name": "mas-ama-app",
+  "version": "1.1.0",
+  "description": "MAS AMA Pro — PWA de gestión del programa CESFAM Félix de Amesti",
+  "private": true,
+  "scripts": {
+    "build": "esbuild app.js --bundle=false --minify --target=es2020 --outfile=build/app.min.js --sourcemap",
+    "build:dev": "esbuild app.js --bundle=false --target=es2020 --outfile=build/app.dev.js --sourcemap",
+    "lint": "echo 'No linter configured yet — using browser console for now'",
+    "test": "echo 'No automated tests yet — see BITACORA.md for manual QA'",
+    "qa:check": "node scripts/qa-check.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danielmoyav-code/mas-ama-app.git"
+  },
+  "author": "Daniel Moya · Programa MAS AMA · CESFAM Félix de Amesti",
+  "license": "UNLICENSED"
+}

@@ -663,3 +663,75 @@ body{
   box-shadow:0 0 8px rgba(192,0,0,.6);
   animation:pulseBadge 1s infinite;
 }
+
+/* ═══════════════════════════════════════════════════════
+   MODO ACCESIBILIDAD — WCAG 2.2 AAA para adultos mayores
+   Toggle vía data-mode="accessible" en <html>
+═══════════════════════════════════════════════════════ */
+html[data-mode="accessible"] body{font-size:17px;line-height:1.6;}
+html[data-mode="accessible"] .top-bar h1{font-size:20px;}
+html[data-mode="accessible"] .nav-item .label{font-size:12px;font-weight:800;}
+html[data-mode="accessible"] .nav-item .icon{font-size:26px;}
+html[data-mode="accessible"] .nav-item{color:rgba(255,255,255,.7);}
+html[data-mode="accessible"] .btn,
+html[data-mode="accessible"] button{font-size:16px;font-weight:800;}
+html[data-mode="accessible"] .btn-primary,
+html[data-mode="accessible"] .btn-ghost{min-height:52px;padding:14px 18px;}
+html[data-mode="accessible"] .field input,
+html[data-mode="accessible"] .field select,
+html[data-mode="accessible"] .field textarea{
+  font-size:17px;padding:14px 12px;min-height:48px;
+}
+html[data-mode="accessible"] .field label{font-size:13px;font-weight:800;}
+html[data-mode="accessible"] .patient-row{padding:14px 12px;}
+html[data-mode="accessible"] .p-name{font-size:17px;font-weight:800;}
+html[data-mode="accessible"] .p-sub{font-size:14px;}
+html[data-mode="accessible"] .chip{font-size:13px;font-weight:800;padding:5px 11px;}
+html[data-mode="accessible"] .card-title{font-size:18px;}
+html[data-mode="accessible"] .stat-value{font-size:32px;font-weight:900;}
+html[data-mode="accessible"] .stat-label{font-size:13px;font-weight:700;}
+/* Contraste AAA para texto secundario */
+html[data-mode="accessible"]{--muted:#3F4F5C;--border:#7A8896;}
+html[data-mode="accessible"] .d-label{color:#444;font-weight:700;}
+html[data-mode="accessible"] .d-val{color:#1A1A1A;font-weight:600;}
+
+/* ═══════════════════════════════════════════════════════
+   ONBOARDING / TUTORIAL OVERLAY
+═══════════════════════════════════════════════════════ */
+.tour-overlay{
+  position:fixed;inset:0;z-index:9000;
+  background:rgba(0,0,0,.55);
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  animation:fadeIn .3s ease;
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.tour-card{
+  background:#fff;border-radius:20px;max-width:340px;width:100%;
+  padding:28px 24px 24px;text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.4);
+}
+.tour-icon{font-size:48px;margin-bottom:12px;}
+.tour-title{font-size:20px;font-weight:900;color:#1A3A5C;margin-bottom:10px;}
+.tour-desc{font-size:14px;color:#444;line-height:1.5;margin-bottom:18px;}
+.tour-progress{display:flex;gap:6px;justify-content:center;margin-bottom:18px;}
+.tour-dot{width:8px;height:8px;border-radius:50%;background:#D5DBDB;}
+.tour-dot.active{background:#17A589;width:24px;border-radius:4px;}
+.tour-actions{display:flex;gap:10px;}
+.tour-actions .btn{flex:1;}
+
+/* ═══════════════════════════════════════════════════════
+   AUDIT LOG VIEW
+═══════════════════════════════════════════════════════ */
+.audit-item{
+  background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:8px;
+  border-left:4px solid var(--blue);
+  display:flex;justify-content:space-between;gap:10px;
+}
+.audit-item.create{border-left-color:var(--green);}
+.audit-item.edit{border-left-color:var(--orange);}
+.audit-item.delete{border-left-color:var(--red);}
+.audit-item.security{border-left-color:var(--purple);}
+.audit-content{flex:1;min-width:0;}
+.audit-action{font-size:13px;font-weight:800;color:#333;}
+.audit-detail{font-size:12px;color:#666;margin-top:2px;}
+.audit-time{font-size:11px;color:#999;white-space:nowrap;}

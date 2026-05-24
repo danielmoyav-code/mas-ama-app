@@ -558,3 +558,323 @@ function buscarCol(headers, opciones) {
   }
   return -1;
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  POST endpoints (backup, subscribe, push, REM)
+//  Recibe URL-encoded form data desde la PWA con mode: 'no-cors'
+// ══════════════════════════════════════════════════════════════════
+function doPost(e) {
+  try {
+    var p = e.parameter || {};
+    var action = p.action || '';
+
+    if (action === 'backup')     return handleBackup(p);
+    if (action === 'subscribe')  return handleSubscribe(p);
+    if (action === 'unsubscribe')return handleUnsubscribe(p);
+    if (action === 'rem')        return handleRemRequest(p);
+    if (action === 'push')       return handleAdminPush(p);
+
+    return output({ status: 'error', message: 'Acción desconocida: ' + action });
+  } catch (err) {
+    return output({ status: 'error', message: err.toString() });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// BACKUP — guarda snapshot JSON en Drive
+// ──────────────────────────────────────────────────────────────────
+function handleBackup(p) {
+  try {
+    var user = p.user || 'anon';
+    var snapshot = p.snapshot || '{}';
+    var fechaIso = Utilities.formatDate(new Date(), 'America/Santiago', 'yyyy-MM-dd_HH-mm');
+    var fileName = 'MAS_AMA_Backup_' + user + '_' + fechaIso + '.json';
+
+    var folder = getOrCreateBackupFolder();
+    var file = folder.createFile(fileName, snapshot, MimeType.PLAIN_TEXT);
+
+    // Mantener solo los últimos 30 backups (LIFO)
+    pruneOldBackups(folder, 30);
+
+    return output({ status: 'ok', fileId: file.getId(), name: fileName });
+  } catch (err) {
+    return output({ status: 'error', message: err.toString() });
+  }
+}
+
+function getOrCreateBackupFolder() {
+  var name = 'MAS_AMA_Backups';
+  var folders = DriveApp.getFoldersByName(name);
+  if (folders.hasNext()) return folders.next();
+  return DriveApp.createFolder(name);
+}
+
+function pruneOldBackups(folder, keep) {
+  try {
+    var files = folder.getFiles();
+    var arr = [];
+    while (files.hasNext()) {
+      var f = files.next();
+      arr.push({ id: f.getId(), date: f.getDateCreated().getTime(), file: f });
+    }
+    arr.sort(function(a,b){ return b.date - a.date; });
+    for (var i = keep; i < arr.length; i++) {
+      arr[i].file.setTrashed(true);
+    }
+  } catch (e) { /* silent */ }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// PUSH SUBSCRIPTIONS — guarda en hoja SUBSCRIPTIONS
+// ──────────────────────────────────────────────────────────────────
+function handleSubscribe(p) {
+  try {
+    var ss = SpreadsheetApp.openById(GESTION_ID);
+    var sh = ss.getSheetByName('SUBSCRIPTIONS') || ss.insertSheet('SUBSCRIPTIONS');
+    if (sh.getLastRow() === 0) {
+      sh.appendRow(['user', 'subscription', 'createdAt']);
+    }
+    var user = p.user || '?';
+    var sub  = p.subscription || '';
+    // Evitar duplicados: si ya existe la misma subscription, no agregamos
+    var data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][1]) === sub) {
+        return output({ status: 'ok', dup: true });
+      }
+    }
+    sh.appendRow([user, sub, new Date().toISOString()]);
+    return output({ status: 'ok' });
+  } catch (err) {
+    return output({ status: 'error', message: err.toString() });
+  }
+}
+
+function handleUnsubscribe(p) {
+  try {
+    var ss = SpreadsheetApp.openById(GESTION_ID);
+    var sh = ss.getSheetByName('SUBSCRIPTIONS');
+    if (!sh) return output({ status: 'ok' });
+    var sub = p.subscription || '';
+    var data = sh.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][1]) === sub) sh.deleteRow(i + 1);
+    }
+    return output({ status: 'ok' });
+  } catch (err) {
+    return output({ status: 'error', message: err.toString() });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// TRIGGER DIARIO — chequea EMPAM próximos y envía notificaciones
+// Configurar trigger en Apps Script: Editor → Triggers → Add Trigger
+//   Function: notifyEmpamProximos  ·  Time-based  ·  Daily  ·  08:00
+// ──────────────────────────────────────────────────────────────────
+function notifyEmpamProximos() {
+  try {
+    var datos = construirDatos();
+    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    var alertas = (datos.pacientes || []).filter(function(p){
+      var s = String(p.empamEstado || '').toUpperCase();
+      return s.indexOf('VENCIDO') >= 0 || s === 'VENCE PRONTO';
+    });
+
+    // Construir mensaje
+    var vencidos = alertas.filter(function(p){ return p.empamEstado.indexOf('VENCIDO') >= 0; }).length;
+    var prontos  = alertas.filter(function(p){ return p.empamEstado === 'VENCE PRONTO';      }).length;
+
+    var title = '🚨 EMPAM — ' + (vencidos + prontos) + ' pacientes requieren atención';
+    var body  = vencidos + ' vencidos · ' + prontos + ' próximos a vencer. Toca para revisar.';
+
+    sendPushToAll(title, body, { url: '/?view=alertas' });
+
+    // Log para debugging
+    Logger.log('[notifyEmpamProximos] vencidos=' + vencidos + ' prontos=' + prontos);
+    return { status: 'ok', vencidos: vencidos, prontos: prontos };
+  } catch (err) {
+    Logger.log('[notifyEmpamProximos] ERROR: ' + err.toString());
+    return { status: 'error', message: err.toString() };
+  }
+}
+
+function sendPushToAll(title, body, extra) {
+  var ss = SpreadsheetApp.openById(GESTION_ID);
+  var sh = ss.getSheetByName('SUBSCRIPTIONS');
+  if (!sh) return { count: 0 };
+
+  var props = PropertiesService.getScriptProperties();
+  var vapidPrivate = props.getProperty('VAPID_PRIVATE');
+  var vapidPublic  = props.getProperty('VAPID_PUBLIC');
+  var vapidSubject = props.getProperty('VAPID_SUBJECT') || 'mailto:daniel.moyav@gmail.com';
+
+  if (!vapidPrivate || !vapidPublic) {
+    Logger.log('[sendPushToAll] VAPID keys no configuradas');
+    return { count: 0, reason: 'no-vapid-keys' };
+  }
+
+  var data = sh.getDataRange().getValues();
+  var count = 0;
+  var payload = JSON.stringify({ title: title, body: body, extra: extra || {} });
+
+  for (var i = 1; i < data.length; i++) {
+    try {
+      var subStr = data[i][1];
+      if (!subStr) continue;
+      // El envío real requiere implementar el protocolo Web Push (VAPID + ECDH).
+      // Apps Script no tiene libs nativas; opciones:
+      //   1) Usar una Cloud Function intermediaria (más robusto)
+      //   2) Usar servicio tipo Firebase Cloud Messaging via REST (FCM)
+      // Para piloto: log a hoja, integración real cuando Daniel decida.
+      var logSh = ss.getSheetByName('PUSH_LOG') || ss.insertSheet('PUSH_LOG');
+      if (logSh.getLastRow() === 0) logSh.appendRow(['fecha','user','title','body']);
+      logSh.appendRow([new Date(), data[i][0], title, body]);
+      count++;
+    } catch (e) { /* skip */ }
+  }
+  return { count: count };
+}
+
+// Endpoint manual para que la app dispare un push (vía admin secret)
+function handleAdminPush(p) {
+  if (p.secret !== ADMIN_SECRET) {
+    return output({ status: 'error', message: 'No autorizado' });
+  }
+  var r = sendPushToAll(p.title || '🚨 MAS AMA', p.body || 'Notificación', null);
+  return output({ status: 'ok', count: r.count });
+}
+
+// ──────────────────────────────────────────────────────────────────
+// GENERACIÓN AUTOMÁTICA DE INFORME REM (Registro Estadístico Mensual)
+// Devuelve URL del PDF generado.
+// ──────────────────────────────────────────────────────────────────
+function handleRemRequest(p) {
+  try {
+    var mes = parseInt(p.mes || (new Date().getMonth()+1));
+    var anio = parseInt(p.anio || new Date().getFullYear());
+    var r = generarREM(mes, anio);
+    return output(r);
+  } catch (err) {
+    return output({ status: 'error', message: err.toString() });
+  }
+}
+
+function generarREM(mes, anio) {
+  var datos = construirDatos();
+  var pacientes = datos.pacientes || [];
+
+  var totalPacientes = pacientes.length;
+  var mujeres   = pacientes.filter(function(p){ return p.sexo === 'M'; }).length;
+  var hombres   = pacientes.filter(function(p){ return p.sexo === 'H'; }).length;
+  var vencidos  = pacientes.filter(function(p){ return String(p.empamEstado||'').indexOf('VENCIDO')>=0; }).length;
+  var vigentes  = pacientes.filter(function(p){ return String(p.empamEstado||'').indexOf('VIGENTE')>=0; }).length;
+  var prontos   = pacientes.filter(function(p){ return String(p.empamEstado||'').indexOf('PRONTO')>=0; }).length;
+  var nuevos    = pacientes.filter(function(p){ return p.isNew === true || p.isNew === 'SI'; }).length;
+
+  // Distribución por taller
+  var porTaller = {};
+  pacientes.forEach(function(p){
+    var t = p.taller || 'SIN ASIGNAR';
+    porTaller[t] = (porTaller[t] || 0) + 1;
+  });
+
+  // Edades
+  var edades = {'60-64':0,'65-69':0,'70-74':0,'75-79':0,'80+':0};
+  pacientes.forEach(function(p){
+    var e = parseInt(p.edad) || 0;
+    if (e>=60 && e<=64) edades['60-64']++;
+    else if (e>=65 && e<=69) edades['65-69']++;
+    else if (e>=70 && e<=74) edades['70-74']++;
+    else if (e>=75 && e<=79) edades['75-79']++;
+    else if (e>=80) edades['80+']++;
+  });
+
+  // Crear Google Doc con plantilla
+  var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var docName = 'REM_MAS_AMA_' + meses[mes-1] + '_' + anio;
+  var doc = DocumentApp.create(docName);
+  var body = doc.getBody();
+
+  body.appendParagraph('INFORME REM — Programa MAS AMA').setHeading(DocumentApp.ParagraphHeading.TITLE);
+  body.appendParagraph('CESFAM Félix de Amesti · Macul').setHeading(DocumentApp.ParagraphHeading.SUBTITLE);
+  body.appendParagraph('Período: ' + meses[mes-1] + ' ' + anio);
+  body.appendParagraph('Generado: ' + Utilities.formatDate(new Date(), 'America/Santiago', 'dd/MM/yyyy HH:mm'));
+  body.appendHorizontalRule();
+
+  body.appendParagraph('1. RESUMEN GENERAL').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  var t1 = body.appendTable([
+    ['Indicador','Valor'],
+    ['Total pacientes inscritos', String(totalPacientes)],
+    ['Mujeres', String(mujeres)],
+    ['Hombres', String(hombres)],
+    ['Nuevos pacientes mes', String(nuevos)],
+  ]);
+
+  body.appendParagraph('2. ESTADO EMPAM').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  body.appendTable([
+    ['Estado','Cantidad','%'],
+    ['EMPAM vigente', String(vigentes), totalPacientes ? (vigentes*100/totalPacientes).toFixed(1) + '%' : '—'],
+    ['Próximo a vencer (30d)', String(prontos), totalPacientes ? (prontos*100/totalPacientes).toFixed(1) + '%' : '—'],
+    ['Vencido', String(vencidos), totalPacientes ? (vencidos*100/totalPacientes).toFixed(1) + '%' : '—'],
+  ]);
+
+  body.appendParagraph('3. DISTRIBUCIÓN POR TALLER').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  var tallerRows = [['Taller','N° pacientes']];
+  Object.keys(porTaller).sort().forEach(function(t){ tallerRows.push([t, String(porTaller[t])]); });
+  body.appendTable(tallerRows);
+
+  body.appendParagraph('4. DISTRIBUCIÓN ETARIA').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  body.appendTable([
+    ['Rango etario','Cantidad'],
+    ['60-64', String(edades['60-64'])],
+    ['65-69', String(edades['65-69'])],
+    ['70-74', String(edades['70-74'])],
+    ['75-79', String(edades['75-79'])],
+    ['80 y más', String(edades['80+'])],
+  ]);
+
+  body.appendParagraph('5. ALERTAS DEL PERÍODO').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  body.appendParagraph('Pacientes con EMPAM VENCIDO que requieren contacto inmediato:').setBold(true);
+  var vencList = pacientes.filter(function(p){ return String(p.empamEstado||'').indexOf('VENCIDO')>=0; });
+  if (vencList.length === 0) {
+    body.appendParagraph('— Ninguno —');
+  } else {
+    vencList.slice(0,30).forEach(function(p){
+      body.appendListItem(p.nombre + ' (' + p.rut + ') — ' + (p.taller||'sin taller'));
+    });
+  }
+
+  body.appendHorizontalRule();
+  body.appendParagraph('Informe generado automáticamente por MAS AMA Pro · Solo lectura · No reemplaza la revisión profesional.').setItalic(true);
+
+  doc.saveAndClose();
+  var docId = doc.getId();
+
+  // Convertir a PDF y guardar en carpeta de REM
+  var pdfBlob = DriveApp.getFileById(docId).getAs('application/pdf');
+  pdfBlob.setName(docName + '.pdf');
+  var folder = getOrCreateRemFolder();
+  var pdfFile = folder.createFile(pdfBlob);
+
+  return {
+    status: 'ok',
+    docUrl: 'https://docs.google.com/document/d/' + docId + '/edit',
+    pdfUrl: pdfFile.getUrl(),
+    docName: docName,
+  };
+}
+
+function getOrCreateRemFolder() {
+  var name = 'MAS_AMA_REM';
+  var folders = DriveApp.getFoldersByName(name);
+  if (folders.hasNext()) return folders.next();
+  return DriveApp.createFolder(name);
+}
+
+// Helper manual para ejecutar desde el Editor de Apps Script
+function generarREMMesActual() {
+  var hoy = new Date();
+  var r = generarREM(hoy.getMonth()+1, hoy.getFullYear());
+  Logger.log('REM generado: ' + r.docUrl);
+  Logger.log('PDF: ' + r.pdfUrl);
+}
