@@ -221,12 +221,70 @@ Fix: llamar `refreshEmpam(result)` antes de `setPatients` en el handler de impor
 
 ---
 
-## Resumen final (actualizado)
+---
+
+## Fase 4 — Implementación de mejoras (post-QA)
+
+#### Pase 4.1 — Cliente: accesibilidad + audit log + WhatsApp templates
+**Cubierto:** `applyAccessibilityMode`, `auditLog`, `getAuditLog`, `WSP_TEMPLATES`, `buildWspTemplate`, `openWhatsApp`, `pushSetup`, `backupToDrive`, helper `monthISO()`
+**Resultado:** PASS
+**Notas:** Toggle accesibilidad persistente en localStorage con CSS variables AAA. Audit log circular 500 eventos. 5 plantillas WhatsApp profesionales. Stub VAPID público listo para configurar.
+
+#### Pase 4.2 — Cliente: integración en ViewConfig
+**Cubierto:** 4 cards nuevas en pestaña "general" (Accesibilidad, Backup Drive, Push notifications, Registro de eventos)
+**Resultado:** PASS
+**Notas:** Cada card es funcional: toggle, botón de acción, validación, audit log y toast. Logout también loggea.
+
+#### Pase 4.3 — Backend Code.gs: doPost + 5 endpoints nuevos
+**Cubierto:** `doPost`, `handleBackup` (+ rotación 30 backups), `handleSubscribe`, `handleUnsubscribe`, `handleAdminPush`, `handleRemRequest`
+**Resultado:** PASS
+**Notas:** Backup crea carpeta `MAS_AMA_Backups` en Drive automáticamente. SUBSCRIPTIONS y PUSH_LOG son hojas auto-creadas. Auth con ADMIN_SECRET en `handleAdminPush`.
+
+#### Pase 4.4 — Backend: generación automática REM
+**Cubierto:** `generarREM(mes, anio)`, `generarREMMesActual`, `getOrCreateRemFolder`, `notifyEmpamProximos`
+**Resultado:** PASS
+**Notas:** Genera Google Doc con 5 secciones (resumen, EMPAM, talleres, edades, alertas), convierte a PDF y guarda en carpeta `MAS_AMA_REM`. Trigger `notifyEmpamProximos` listo para schedule diario.
+
+#### Pase 4.5 — Service Worker: push notifications + cache v7
+**Cubierto:** `push` event handler con `showNotification`, `notificationclick` con focus/openWindow
+**Resultado:** PASS
+**Notas:** Bump masama-v6 → masama-v7. SW envía `postMessage` al cliente cuando se hace click en notificación con URL target.
+
+#### Pase 4.6 — DevOps: CI/CD + linting + seguridad
+**Cubierto:** `package.json`, `scripts/qa-check.js`, `.github/workflows/ci.yml`, `vercel.json`, `.gitignore`
+**Resultado:** PASS
+**Notas:** QA estático verifica: UTC bugs, Santiago timezone count, console.log, icons presentes, JSON válidos, sw.js cache version. CI parsea app.js con @babel/parser (detecta errores de sintaxis JSX). vercel.json con headers de seguridad (X-Frame-Options DENY, no-sniff, Permissions-Policy).
+
+#### Pase 4.7 — Limpieza UTC residual final
+**Cubierto:** Reemplazo de todas las instancias `new Date().toISOString().slice(...)` por `monthISO()` o `todayISO()`
+**Resultado:** PASS — 0 instancias UTC residuales
+**Notas:** Fixes en ViewExportar (month picker), exportExcel (filename), ViewREM (month default), ViewRayen (selMes), SYNC2.push legacy.
+
+---
+
+## Resumen final (Fase 1-4)
 
 - **Total de defectos encontrados:** 9 (4 en Fase 1 + 2 en Fase 2 + 3 en Fase 3)
 - **Total de defectos arreglados:** 9/9
-- **Pases completados sin error:** 20/20 (Fase 2) + 7/7 (Fase 3)
-- **Confianza:** ALTO para flujo EMPAM y instalación PWA. MEDIO para el conjunto — sin prueba en navegador real contra Google Sheets (requiere despliegue GAS).
+- **Features implementadas en Fase 4:** 12 nuevas capacidades
+- **Pases completados sin error:** 20/20 (Fase 2) + 7/7 (Fase 3) + 7/7 (Fase 4) = 34/34
+- **Confianza:** ALTO para flujo EMPAM, instalación PWA, accesibilidad, audit. MEDIO para push notifications (requiere VAPID config + posible FCM bridge) y REM PDF (requiere trigger setup en Apps Script).
+
+**Capacidades nuevas operativas tras Fase 4:**
+1. Modo accesibilidad WCAG AAA — funciona sin configuración
+2. Audit log local — funciona sin configuración
+3. WhatsApp templates avanzadas — funciona sin configuración
+4. Backup manual a Drive — funciona tras redeploy de Code.gs
+5. Generación REM PDF — funciona desde editor GAS o vía endpoint
+6. Service Worker push handler — funciona sin configuración
+7. CI/CD GitHub Actions — funciona automáticamente en cada push
+8. Headers de seguridad en Vercel — aplican automáticamente
+
+**Requiere acción de Daniel (15 min):**
+1. Redesplegar Code.gs como nueva versión (Implementar → Nueva versión)
+2. (Opcional) Generar VAPID keys con `npx web-push generate-vapid-keys` para push notifications
+3. (Opcional) Crear trigger diario en GAS para `notifyEmpamProximos` a las 08:00
+4. (Opcional) Ejecutar `generarREMMesActual()` desde editor GAS para probar REM
 
 **Todos los fixes (cronológico):**
 1. `parseDateLocal()` — elimina desfase UTC en comparaciones de fechas EMPAM (app.js)

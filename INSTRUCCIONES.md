@@ -80,6 +80,47 @@ Cuando tengas una nueva versión del Maestro:
 
 ---
 
+## NUEVAS FEATURES — Mayo 2026
+
+### 🔍 Modo accesibilidad
+Para adultos mayores o usuarios con problemas de vista:
+1. Ve a **⚙️ Config** → pestaña "General"
+2. Toca **🔍 Activar modo accesible**
+3. Tipografía y contraste se aumentan automáticamente
+4. Toca de nuevo para volver al modo normal
+
+### ☁️ Respaldo a Drive
+Protege contra pérdida del celular:
+1. Ve a **⚙️ Config** → pestaña "General"
+2. Toca **☁️ Crear respaldo ahora**
+3. Se guarda en tu Drive en la carpeta **MAS_AMA_Backups**
+4. Se mantienen los últimos 30 respaldos automáticamente
+
+### 📜 Registro de eventos (Audit log)
+Trazabilidad de todo lo que pasa en la app:
+1. Ve a **⚙️ Config** → pestaña "General" → **📜 Registro de eventos**
+2. Toca "Ver últimos 30 eventos"
+3. Muestra: logins, registros de pacientes, importaciones, backups, etc.
+
+### 🔔 Notificaciones push (requiere configuración)
+Para recibir avisos automáticos de EMPAM vencidos:
+1. Daniel genera las claves VAPID: ejecuta en su PC `npx web-push generate-vapid-keys`
+2. Copia la **clave pública** a `app.js` línea ~270 (`VAPID_PUBLIC_KEY`)
+3. Guarda la **clave privada** en Apps Script: Configuración → Propiedades del script → `VAPID_PRIVATE`
+4. Crea trigger diario en GAS: Editor → Activadores → Add Trigger
+   - Función: `notifyEmpamProximos`
+   - Source: Time-driven · Day timer · 8am-9am
+
+### 📊 Generación REM PDF automática
+1. Abre el editor de Apps Script (Code.gs)
+2. Selecciona la función `generarREMMesActual` del dropdown
+3. Toca ▶ Ejecutar
+4. El PDF queda en Drive → carpeta **MAS_AMA_REM**
+
+---
+
 ## Soporte
 Generado con Claude Pro — Anthropic
 Programa MAS AMA · CESFAM Félix de Amesti · 2026
+
+Para soporte técnico, escribe a daniel.moyav@gmail.com
