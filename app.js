@@ -5784,6 +5784,199 @@ function SyncStatusBar({ syncState, onSync }) {
 
 
 // ═══════════════════════════════════════════════════════════════════════
+//  MÓDULO CITACIONES — contacto rápido 📞 / 💬 sin guardar contactos
+// ═══════════════════════════════════════════════════════════════════════
+const CIT_MSG_DEFAULT = 'Hola {nombre}, le saludamos del programa Más AMA del CESFAM. Le invitamos a participar en el taller de su sector. ¿Le acomoda asistir esta semana? ¡Le esperamos!';
+const CIT_GESTIONES = [
+  ['PEND','⏳ Pendiente','#7E5109','#FEF9E7'],
+  ['CONTACTADO','📞 Contactado','#2471A3','#D6EAF8'],
+  ['CONFIRMO','✅ Confirmó','#1E8449','#D5F5E3'],
+  ['NOCONTESTA','📵 No contesta','#7D6608','#FCF3CF'],
+  ['NOASISTIRA','❌ No asistirá','#922B21','#FADBD8'],
+];
+
+// Normaliza teléfonos chilenos: quita espacios/guiones, toma el primero si hay
+// varios separados por "/", antepone +56 a celulares de 9 dígitos con 9 inicial.
+function normalizarFono(fono){
+  if(!fono||!String(fono).trim()) return {tipo:'sin'};
+  const raw=String(fono).split('/')[0].trim();
+  let n=raw.replace(/\D/g,'');
+  if(n.startsWith('56')&&n.length>=11) n=n.slice(2);
+  if(n.startsWith('0')&&n.length===10) n=n.slice(1);
+  if(n.length===9&&n[0]==='9')
+    return {tipo:'celular',tel:'+56'+n,wa:'56'+n,display:'+56 '+n.slice(0,1)+' '+n.slice(1,5)+' '+n.slice(5)};
+  if(n.length===9)
+    return {tipo:'fijo',tel:'+56'+n,display:'☎️ +56 '+n.slice(0,2)+' '+n.slice(2)};
+  return {tipo:'invalido',display:raw};
+}
+function citPrimerNombre(nombre){
+  const t=String(nombre||'').trim().split(/\s+/)[0]||'';
+  return t? t.charAt(0).toUpperCase()+t.slice(1).toLowerCase() : '';
+}
+
+function ViewCitaciones({patients,toast}){
+  const h=React.createElement;
+  const [msg,setMsg]        = useState(()=>DB.get('citacionesMsg',CIT_MSG_DEFAULT));
+  const [log,setLog]        = useState(()=>DB.get('citacionesLog',{}));
+  const [q,setQ]            = useState('');
+  const [taller,setTaller]  = useState('TODOS');
+  const [estado,setEstado]  = useState('TODOS');
+  const [gestion,setGestion]= useState('TODOS');
+  const [showMsg,setShowMsg]= useState(false);
+
+  function saveMsg(v){ setMsg(v); DB.set('citacionesMsg',v); }
+  function gestionDe(p){ return log[p.id]?.estado||'PEND'; }
+  function setGestionDe(p,val){
+    const next={...log,[p.id]:{estado:val,fecha:new Date().toISOString()}};
+    setLog(next); DB.set('citacionesLog',next);
+  }
+  function marcarContactado(p){ if(gestionDe(p)==='PEND') setGestionDe(p,'CONTACTADO'); }
+
+  // Talleres presentes en los datos — SAN SEBASTIAN y LA FUNDACIÓN primero
+  const talleres=useMemo(()=>{
+    const set=[...new Set(patients.map(p=>p.taller).filter(Boolean))];
+    const prio=['SAN SEBASTIAN','LA FUNDACIÓN'];
+    return [...prio.filter(t=>set.includes(t)),...set.filter(t=>!prio.includes(t)).sort()];
+  },[patients]);
+
+  const lista=useMemo(()=>{
+    const ql=q.trim().toLowerCase();
+    return patients.filter(p=>{
+      if(taller!=='TODOS'&&p.taller!==taller) return false;
+      if(estado!=='TODOS'&&String(p.estado||'').toUpperCase()!==estado) return false;
+      if(gestion!=='TODOS'&&gestionDe(p)!==gestion) return false;
+      if(ql&&!(`${p.nombre} ${p.fono||''}`.toLowerCase().includes(ql))) return false;
+      return true;
+    });
+  },[patients,taller,estado,gestion,q,log]);
+
+  const gestionados=lista.filter(p=>gestionDe(p)!=='PEND').length;
+  const confirmados=lista.filter(p=>gestionDe(p)==='CONFIRMO').length;
+
+  function abrirWA(p){
+    const f=normalizarFono(p.fono);
+    if(!f.wa){ toast&&toast('⚠️ '+citPrimerNombre(p.nombre)+' no tiene celular válido'); return; }
+    const texto=msg.replace(/\{nombre\}/gi,citPrimerNombre(p.nombre));
+    openWhatsApp(f.wa,texto);
+    marcarContactado(p);
+  }
+  function copiarResumen(){
+    const fecha=new Date().toLocaleDateString('es-CL');
+    const lineas=[
+      `📞 CITACIONES MAS AMA — ${fecha}`,
+      `Taller: ${taller==='TODOS'?'Todos':taller}${estado!=='TODOS'?' · Estado: '+estado:''}`,
+      `Total: ${lista.length} · Gestionados: ${gestionados} · Confirmados: ${confirmados}`,
+      '──────────────────'
+    ];
+    CIT_GESTIONES.forEach(([k,label])=>{
+      const grupo=lista.filter(p=>gestionDe(p)===k);
+      if(!grupo.length) return;
+      lineas.push('',`${label} (${grupo.length}):`);
+      grupo.forEach(p=>lineas.push(`• ${p.nombre}${p.fono?' — '+p.fono:''}`));
+    });
+    const txt=lineas.join('\n');
+    const ok=()=>toast&&toast('✅ Resumen copiado al portapapeles');
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok).catch(ok); }
+    else{ const el=document.createElement('textarea');el.value=txt;document.body.appendChild(el);el.select();document.execCommand('copy');document.body.removeChild(el);ok(); }
+  }
+
+  const selStyle={padding:'8px 10px',borderRadius:10,border:'1.5px solid #ddd',
+    fontSize:13,background:'#fff',flex:1,minWidth:0};
+
+  return h('div',{className:'page'},
+
+    // ── Contadores ──
+    h('div',{style:{display:'flex',gap:8,marginBottom:12}},
+      [['Total',lista.length,'#1A3A5C'],['Gestionados',gestionados,'#2471A3'],['Confirmados',confirmados,'#1E8449']]
+        .map(([l,v,c])=>h('div',{key:l,style:{flex:1,background:'#fff',borderRadius:12,
+          padding:'10px 6px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}},
+          h('div',{style:{fontSize:22,fontWeight:900,color:c}},v),
+          h('div',{style:{fontSize:11,fontWeight:700,color:'#777'}},l)))
+    ),
+
+    // ── Mensaje de invitación ──
+    h('div',{style:{background:'#fff',borderRadius:12,padding:'12px 14px',marginBottom:12,
+      boxShadow:'0 1px 4px rgba(0,0,0,.06)'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'},
+        onClick:()=>setShowMsg(s=>!s)},
+        h('div',{style:{fontWeight:800,fontSize:14}},'💬 Mensaje de invitación'),
+        h('span',{style:{fontSize:13,color:'#2471A3',fontWeight:700}},showMsg?'Ocultar ▲':'Editar ▼')),
+      showMsg&&h('div',{style:{marginTop:10}},
+        h('textarea',{rows:4,value:msg,onChange:e=>saveMsg(e.target.value),
+          style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid #ddd',
+            fontSize:13,resize:'vertical',boxSizing:'border-box',fontFamily:'inherit'}}),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}},
+          h('span',{style:{fontSize:11,color:'#777'}},'{nombre} se reemplaza por el primer nombre'),
+          h('button',{className:'btn btn-ghost btn-sm',onClick:()=>saveMsg(CIT_MSG_DEFAULT)},'↺ Restablecer')))
+    ),
+
+    // ── Buscador ──
+    h('input',{type:'text',placeholder:'🔍 Buscar por nombre o teléfono...',value:q,
+      onChange:e=>setQ(e.target.value),
+      style:{width:'100%',padding:'11px 14px',borderRadius:12,border:'1.5px solid #ddd',
+        fontSize:14,boxSizing:'border-box',marginBottom:10}}),
+
+    // ── Filtro talleres (chips) ──
+    h('div',{className:'tabs',style:{marginBottom:10}},
+      ['TODOS',...talleres].map(t=>h('div',{key:t,
+        className:`tab ${taller===t?'active':''}`,onClick:()=>setTaller(t)},
+        t==='TODOS'?'Todos':t))),
+
+    // ── Filtros estado + gestión ──
+    h('div',{style:{display:'flex',gap:8,marginBottom:12}},
+      h('select',{value:estado,onChange:e=>setEstado(e.target.value),style:selStyle},
+        h('option',{value:'TODOS'},'Estado: todos'),
+        ESTADOS.map(s=>h('option',{key:s,value:s},s))),
+      h('select',{value:gestion,onChange:e=>setGestion(e.target.value),style:selStyle},
+        h('option',{value:'TODOS'},'Gestión: todas'),
+        CIT_GESTIONES.map(([k,l])=>h('option',{key:k,value:k},l)))),
+
+    // ── Copiar resumen ──
+    h('button',{className:'btn btn-primary',style:{width:'100%',marginBottom:12},
+      onClick:copiarResumen},'📋 Copiar resumen de gestión'),
+
+    // ── Lista ──
+    lista.length===0
+      ? h('div',{className:'empty-state'},
+          h('div',{className:'emoji'},'📭'),
+          h('p',null,'Sin personas con estos filtros'))
+      : h('div',{className:'patient-list'},
+          lista.map(p=>{
+            const f=normalizarFono(p.fono);
+            const g=gestionDe(p);
+            const gDef=CIT_GESTIONES.find(x=>x[0]===g)||CIT_GESTIONES[0];
+            return h('div',{key:p.id,className:'patient-row',style:{alignItems:'flex-start',cursor:'default'}},
+              h(Avatar,{sexo:p.sexo,nombre:p.nombre}),
+              h('div',{className:'p-info',style:{minWidth:0}},
+                h('div',{className:'p-name'},p.nombre),
+                h('div',{className:'p-sub'},
+                  (p.taller||'Sin taller')+(p.estado?' · '+p.estado:'')),
+                h('div',{style:{fontSize:12,marginTop:2,
+                  color:f.tipo==='invalido'?'#C00000':f.tipo==='sin'?'#999':'#555'}},
+                  f.tipo==='sin'?'Sin teléfono'
+                  :f.tipo==='invalido'?'⚠️ Verificar número: '+f.display
+                  :f.display),
+                // Gestión + acciones
+                h('div',{style:{display:'flex',gap:6,marginTop:8,alignItems:'center',flexWrap:'wrap'}},
+                  h('select',{value:g,onChange:e=>setGestionDe(p,e.target.value),
+                    style:{padding:'6px 8px',borderRadius:8,fontSize:12,fontWeight:700,
+                      border:'1.5px solid '+gDef[3],background:gDef[3],color:gDef[2]}},
+                    CIT_GESTIONES.map(([k,l])=>h('option',{key:k,value:k},l))),
+                  (f.tipo==='celular'||f.tipo==='fijo')&&h('a',{
+                    href:'tel:'+f.tel,onClick:()=>marcarContactado(p),
+                    style:{background:'#2471A3',color:'#fff',borderRadius:8,
+                      padding:'7px 12px',fontSize:12,fontWeight:700,textDecoration:'none',
+                      whiteSpace:'nowrap'}},'📞 Llamar'),
+                  f.tipo==='celular'&&h('button',{onClick:()=>abrirWA(p),
+                    style:{background:'#25D366',color:'#fff',border:'none',borderRadius:8,
+                      padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer',
+                      whiteSpace:'nowrap'}},'💬 WhatsApp')))
+            );
+          }))
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  SISTEMA DE SYNC — Google Sheets + Roles de Usuario
 // ═══════════════════════════════════════════════════════════════════════
 // APP SHELL
@@ -5966,7 +6159,7 @@ function App(){
     agenda:'Agenda Duplas', nuevo:'Nuevo Paciente',
     ficha: selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas', exportar:'Exportar Excel', config:'Configuración',
-    control:'🎛️ Control Maestro',
+    control:'🎛️ Control Maestro', citaciones:'Citaciones',
   };
 
   const navItems = [
@@ -5974,6 +6167,7 @@ function App(){
     {id:'pacientes',icon:'👥', label:'Pacientes'},
     {id:'alertas',  icon:'🚨', label:'Alertas', dot:alertCount>0},
     {id:'lista',    icon:'📋', label:'Lista'},
+    {id:'citaciones',icon:'📞', label:'Citas'},
     {id:'rayen',    icon:'🏥', label:'RAYEN'},
     {id:'rutinas',  icon:'📚', label:'Rutinas'},
     {id:'agenda',   icon:'📅', label:'Agenda'},
@@ -6047,6 +6241,7 @@ function App(){
       : view==='nuevo'     ? React.createElement(ViewNuevo,{patients,setPatients,toast,onBack:()=>setView('pacientes'),doSync,autoSync})
       : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast,attendanceLog})
       : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
+      : view==='citaciones'? React.createElement(ViewCitaciones,{patients:visiblePatients,toast})
       : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
       : view==='rayen'     ? React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
       : view==='rutinas'   ? React.createElement(currentUser?.tipoRutinas==='cognitivo'?ViewRutinasCognitivas:ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
