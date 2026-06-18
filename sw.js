@@ -1,4 +1,4 @@
-const CACHE = 'masama-v7';
+const CACHE = 'masama-v8';
 const ASSETS = ['/', '/index.html', '/styles.css', '/app.js',
   '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'];

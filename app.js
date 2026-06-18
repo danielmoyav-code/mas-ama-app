@@ -5977,6 +5977,332 @@ function ViewCitaciones({patients,toast}){
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  DIFUSIÓN — Envío masivo semiautomático por WhatsApp (sin Business API)
+//  Sube Excel/Word/CSV → extrae números → escribe mensaje → envía 1 a 1.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Normaliza a número WhatsApp enviable (celular). Devuelve {wa,display} o null.
+function difNorm(raw){
+  if(raw==null) return null;
+  const tienePlus = String(raw).trim().startsWith('+');
+  let n = String(raw).replace(/\D/g,'');
+  if(!n) return null;
+  if(n.startsWith('56') && n.length>=11) n=n.slice(2);      // quita código país Chile
+  if(n.startsWith('0') && n.length===10) n=n.slice(1);       // quita 0 inicial local
+  if(n.length===9 && n[0]==='9')                             // celular chileno
+    return {wa:'56'+n, display:'+56 9 '+n.slice(1,5)+' '+n.slice(5)};
+  if(tienePlus && n.length>=11 && n.length<=13)              // número internacional con +
+    return {wa:n, display:'+'+n};
+  if(n.length>=11 && n.length<=13)                           // ya trae código país
+    return {wa:n, display:'+'+n};
+  return null;                                               // fijo o inválido (no WhatsApp)
+}
+
+// Extrae contactos {nombre,wa,display} desde texto libre (CSV, TXT, Word).
+function difDeTexto(txt){
+  const out=[]; const vist=new Set();
+  String(txt||'').split(/\r?\n/).forEach(linea=>{
+    const tokens = linea.match(/\+?\d[\d\s().\-]{6,}\d/g);
+    if(!tokens) return;
+    tokens.forEach(tok=>{
+      const f=difNorm(tok);
+      if(!f || vist.has(f.wa)) return;
+      vist.add(f.wa);
+      let nombre = linea.replace(tok,'').replace(/[,;:\t|]/g,' ').trim();
+      nombre = nombre.replace(/\b(cel|celular|fono|tel|tel[eé]fono|whatsapp|wsp|n[uú]mero)\b/gi,'').trim();
+      if(nombre.length>40 || /\d{3,}/.test(nombre)) nombre='';
+      out.push({nombre, wa:f.wa, display:f.display});
+    });
+  });
+  return out;
+}
+
+// Extrae contactos desde un ArrayBuffer de Excel (.xlsx/.xls).
+function difDeExcel(arrbuf){
+  const XL = window.XLSX;
+  if(!XL) return [];
+  const wb = XL.read(arrbuf,{type:'array'});
+  const out=[]; const vist=new Set();
+  wb.SheetNames.forEach(sn=>{
+    const rows = XL.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
+    if(!rows.length) return;
+    // Detectar columnas por encabezado en las primeras 6 filas
+    let colFono=-1, colNombre=-1, headerRow=-1;
+    for(let i=0;i<Math.min(rows.length,6);i++){
+      const r=rows[i].map(c=>String(c).toLowerCase());
+      const fi=r.findIndex(c=>/fono|tel|cel|whats|n[uú]mero/.test(c));
+      if(fi>=0){ colFono=fi; colNombre=r.findIndex(c=>/nombre|paciente|contacto|apellido/.test(c)); headerRow=i; break; }
+    }
+    rows.forEach((r,idx)=>{
+      if(idx===headerRow) return;
+      if(colFono>=0){
+        const f=difNorm(r[colFono]);
+        if(f && !vist.has(f.wa)){ vist.add(f.wa);
+          out.push({nombre: colNombre>=0?String(r[colNombre]||'').trim():'', wa:f.wa, display:f.display}); }
+      }else{
+        // Sin encabezado: buscar el primer celular y el primer texto-nombre de la fila
+        let foundWa=null, nombre='';
+        r.forEach(c=>{
+          const f=difNorm(c);
+          if(f && !foundWa) foundWa=f;
+          else if(typeof c==='string' && /[a-záéíóúñ]{3,}/i.test(c) && !nombre) nombre=c.trim();
+        });
+        if(foundWa && !vist.has(foundWa.wa)){ vist.add(foundWa.wa);
+          out.push({nombre, wa:foundWa.wa, display:foundWa.display}); }
+      }
+    });
+  });
+  return out;
+}
+
+// Lee un File y devuelve contactos según su tipo (Excel, Word, CSV/TXT).
+async function difLeerArchivo(file){
+  const nombre=(file.name||'').toLowerCase();
+  if(nombre.endsWith('.xlsx')||nombre.endsWith('.xls')){
+    const buf=await file.arrayBuffer();
+    return difDeExcel(buf);
+  }
+  if(nombre.endsWith('.docx')){
+    if(!window.mammoth) throw new Error('No se pudo cargar el lector de Word. Revisa tu conexión.');
+    const buf=await file.arrayBuffer();
+    const res=await window.mammoth.extractRawText({arrayBuffer:buf});
+    return difDeTexto(res.value||'');
+  }
+  // .csv, .txt y cualquier otro como texto
+  const texto=await file.text();
+  return difDeTexto(texto);
+}
+
+const DIF_MSG_DEFAULT='¡Hola {nombre}! 👋 Le saludamos del Programa MAS AMA del CESFAM Félix de Amesti. ';
+
+function ViewDifusion({patients,toast}){
+  const h=React.createElement;
+  const saved = DB.get('difusionState', {});
+  const [contactos,setContactos] = useState(saved.contactos||[]);
+  const [enviados,setEnviados]   = useState(saved.enviados||{});
+  const [msg,setMsg]             = useState(saved.msg||DIF_MSG_DEFAULT);
+  const [pegar,setPegar]         = useState('');
+  const [cargando,setCargando]   = useState(false);
+  // Origen de números: 'pacientes' (base sincronizada) o 'archivo' (Excel/CSV/pegar)
+  const [fuente,setFuente]       = useState('pacientes');
+  const [fTaller,setFTaller]     = useState('TODOS');
+  const [fEmpam,setFEmpam]       = useState('TODOS');
+
+  const pacientes = patients||[];
+
+  // Persistir
+  useEffect(()=>{ DB.set('difusionState',{contactos,enviados,msg}); },[contactos,enviados,msg]);
+
+  const total=contactos.length;
+  const nEnv=contactos.filter(c=>enviados[c.wa]).length;
+  const pend=total-nEnv;
+  const prog=total?Math.round(nEnv/total*100):0;
+  // Siguiente pendiente (en orden de la lista) — motor de la cola con auto-avance
+  const idxSig=contactos.findIndex(c=>!enviados[c.wa]);
+  const siguiente=idxSig>=0?contactos[idxSig]:null;
+
+  // Talleres presentes en la base
+  const talleres=useMemo(()=>{
+    const set=[...new Set(pacientes.map(p=>p.taller).filter(Boolean))].sort();
+    return set;
+  },[pacientes]);
+
+  // Pre-selección de pacientes según filtros (solo los que tienen celular válido)
+  const selPacientes=useMemo(()=>{
+    return pacientes.filter(p=>{
+      if(fTaller!=='TODOS' && p.taller!==fTaller) return false;
+      if(fEmpam!=='TODOS' && !String(p.empamEstado||'').toUpperCase().includes(fEmpam)) return false;
+      return !!difNorm(p.fono);
+    });
+  },[pacientes,fTaller,fEmpam]);
+
+  function merge(nuevos,silent){
+    if(!nuevos.length){ if(!silent) toast&&toast('No se detectaron números válidos'); return 0; }
+    const map={}; [...contactos,...nuevos].forEach(c=>{ if(!map[c.wa]) map[c.wa]=c; });
+    const lista=Object.values(map);
+    const agregados=lista.length-contactos.length;
+    setContactos(lista);
+    toast&&toast(`✅ ${agregados} nuevos · ${lista.length} en la lista`);
+    return agregados;
+  }
+
+  function agregarDesdePacientes(){
+    const nuevos=selPacientes.map(p=>{ const f=difNorm(p.fono); return {nombre:p.nombre,wa:f.wa,display:f.display}; });
+    merge(nuevos);
+  }
+
+  async function onArchivo(e){
+    const file=e.target.files&&e.target.files[0];
+    e.target.value='';
+    if(!file) return;
+    setCargando(true);
+    try{ merge(await difLeerArchivo(file)); }
+    catch(err){ toast&&toast('❌ '+(err.message||'No se pudo leer el archivo')); }
+    finally{ setCargando(false); }
+  }
+
+  function procesarPegado(){
+    const nuevos=difDeTexto(pegar);
+    merge(nuevos);
+    setPegar('');
+  }
+
+  function enviar(c){
+    const nombre=citPrimerNombre(c.nombre)||'';
+    const texto=msg.replace(/\{nombre\}/gi, nombre||'hola');
+    openWhatsApp(c.wa, texto);
+    // Marcar enviado → el "siguiente" avanza solo al volver a la app
+    setEnviados(prev=>({...prev,[c.wa]:true}));
+  }
+
+  function quitar(wa){
+    setContactos(prev=>prev.filter(c=>c.wa!==wa));
+    setEnviados(prev=>{ const n={...prev}; delete n[wa]; return n; });
+  }
+
+  function reiniciar(){
+    if(!window.confirm('¿Borrar la lista y empezar de cero?')) return;
+    setContactos([]); setEnviados({}); setPegar('');
+  }
+
+  function reabrirEnvios(){ setEnviados({}); }
+
+  const card={background:'#fff',borderRadius:12,padding:'12px 14px',marginBottom:12,
+    boxShadow:'0 1px 4px rgba(0,0,0,.06)'};
+  const tabStyle=(on)=>({flex:1,textAlign:'center',padding:'9px 6px',borderRadius:10,
+    fontSize:13,fontWeight:700,cursor:'pointer',
+    background:on?'#1A3A5C':'#EEF2F6',color:on?'#fff':'#557'});
+  const selStyle={padding:'8px 10px',borderRadius:10,border:'1.5px solid #ddd',
+    fontSize:13,background:'#fff',flex:1,minWidth:0};
+
+  return h('div',{className:'page'},
+
+    // Aviso
+    h('div',{style:{...card,background:'#EAF7EF',border:'1px solid #ABE3C4'}},
+      h('div',{style:{fontSize:13,color:'#1E6B43',lineHeight:1.5}},
+        '✅ Gratis y sin riesgo de bloqueo. La app abre WhatsApp con el mensaje listo; ',
+        h('b',null,'tú tocas Enviar'),' por cada contacto. No requiere WhatsApp Business.')),
+
+    // Paso 1: cargar contactos — doble origen
+    h('div',{style:card},
+      h('div',{style:{fontWeight:800,fontSize:14,marginBottom:10}},'1 · Cargar contactos'),
+      h('div',{style:{display:'flex',gap:8,marginBottom:12}},
+        h('div',{style:tabStyle(fuente==='pacientes'),onClick:()=>setFuente('pacientes')},'👥 Desde pacientes'),
+        h('div',{style:tabStyle(fuente==='archivo'),onClick:()=>setFuente('archivo')},'📂 Importar archivo')),
+
+      fuente==='pacientes'
+        ? h('div',null,
+            h('div',{style:{display:'flex',gap:8,marginBottom:10}},
+              h('select',{value:fTaller,onChange:e=>setFTaller(e.target.value),style:selStyle},
+                h('option',{value:'TODOS'},'Taller: todos'),
+                talleres.map(t=>h('option',{key:t,value:t},t))),
+              h('select',{value:fEmpam,onChange:e=>setFEmpam(e.target.value),style:selStyle},
+                h('option',{value:'TODOS'},'EMPAM: todos'),
+                h('option',{value:'VENCIDO'},'Vencido'),
+                h('option',{value:'PRONTO'},'Vence pronto'),
+                h('option',{value:'VIGENTE'},'Vigente'),
+                h('option',{value:'PENDIENTE'},'Pendiente'))),
+            h('button',{className:'btn btn-primary',style:{width:'100%'},
+              disabled:!selPacientes.length,onClick:agregarDesdePacientes},
+              selPacientes.length
+                ? `➕ Agregar ${selPacientes.length} con celular`
+                : 'Sin pacientes con celular en este filtro'),
+            h('div',{style:{fontSize:11,color:'#888',marginTop:8}},
+              'Usa la base ya sincronizada desde Google Sheets. Se omiten quienes no tienen celular válido.'))
+        : h('div',null,
+            h('label',{className:'btn btn-primary',style:{display:'block',textAlign:'center',cursor:'pointer',marginBottom:10}},
+              cargando?'⏳ Leyendo...':'📂 Subir Excel / Word / CSV',
+              h('input',{type:'file',accept:'.xlsx,.xls,.csv,.txt,.docx',onChange:onArchivo,
+                disabled:cargando,style:{display:'none'}})),
+            h('div',{style:{fontSize:11,color:'#888',marginBottom:10}},
+              'Detecta automáticamente columnas de nombre y teléfono. También puedes pegar la lista:'),
+            h('textarea',{rows:3,value:pegar,onChange:e=>setPegar(e.target.value),
+              placeholder:'María, 9 1234 5678\nJuan 9 8765 4321',
+              style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid #ddd',
+                fontSize:13,resize:'vertical',boxSizing:'border-box',fontFamily:'monospace'}}),
+            pegar.trim()&&h('button',{className:'btn btn-ghost btn-sm',style:{marginTop:8},
+              onClick:procesarPegado},'➕ Agregar pegados'))),
+
+    // Paso 2: mensaje
+    h('div',{style:card},
+      h('div',{style:{fontWeight:800,fontSize:14,marginBottom:8}},'2 · Mensaje'),
+      h('textarea',{rows:4,value:msg,onChange:e=>setMsg(e.target.value),
+        style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid #ddd',
+          fontSize:13,resize:'vertical',boxSizing:'border-box',fontFamily:'inherit'}}),
+      h('div',{style:{fontSize:11,color:'#777',marginTop:6}},
+        '{nombre} se reemplaza por el primer nombre de cada contacto.')),
+
+    total===0
+      ? h('div',{className:'empty-state'},
+          h('div',{className:'emoji'},'📢'),
+          h('p',null,'Elige pacientes o sube un archivo para empezar'))
+      : h('div',null,
+
+          // Progreso
+          h('div',{style:{...card,background:'#1A3A5C',color:'#fff'}},
+            h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:6}},
+              h('span',{style:{fontWeight:700,fontSize:13}},`${nEnv} de ${total} enviados`),
+              h('span',{style:{fontWeight:900,fontSize:13,color:'#58D68D'}},prog+'%')),
+            h('div',{style:{width:'100%',height:8,background:'rgba(255,255,255,.2)',borderRadius:6}},
+              h('div',{style:{width:prog+'%',height:8,background:'#58D68D',borderRadius:6,transition:'width .3s'}})),
+            h('div',{style:{fontSize:11,opacity:.8,marginTop:6}},`${pend} pendientes`)),
+
+          // ── Cola optimizada: botón grande que SIEMPRE muestra al siguiente ──
+          siguiente
+            ? h('div',{style:{...card,padding:'16px 14px'}},
+                h('div',{style:{fontSize:12,color:'#888',fontWeight:700,marginBottom:4}},
+                  `SIGUIENTE · ${nEnv+1} de ${total}`),
+                h('div',{style:{fontSize:20,fontWeight:900,color:'#1A3A5C',marginBottom:2}},
+                  siguiente.nombre||'Sin nombre'),
+                h('div',{style:{fontSize:13,color:'#557',marginBottom:14}},siguiente.display),
+                h('button',{onClick:()=>enviar(siguiente),
+                  style:{width:'100%',background:'#25D366',color:'#fff',border:'none',
+                    borderRadius:12,padding:'16px',fontSize:17,fontWeight:800,cursor:'pointer',
+                    boxShadow:'0 3px 10px rgba(37,211,102,.35)'}},
+                  `💬 Enviar a ${citPrimerNombre(siguiente.nombre)||'contacto'}`),
+                h('div',{style:{display:'flex',gap:8,marginTop:10}},
+                  h('button',{className:'btn btn-ghost btn-sm',style:{flex:1},
+                    onClick:()=>setEnviados(prev=>({...prev,[siguiente.wa]:true}))},'⤳ Saltar'),
+                  h('button',{className:'btn btn-ghost btn-sm',style:{flex:1},
+                    onClick:()=>quitar(siguiente.wa)},'× Quitar')),
+                h('div',{style:{fontSize:11,color:'#999',textAlign:'center',marginTop:10,lineHeight:1.4}},
+                  'Toca enviar → en WhatsApp toca ➤ → vuelve a la app: aquí ya estará el siguiente.'))
+            : h('div',{style:{...card,background:'#EAF7EF',textAlign:'center'}},
+                h('div',{style:{fontSize:26}},'🎉'),
+                h('div',{style:{fontWeight:800,color:'#1E6B43'}},'¡Difusión completada!'),
+                h('button',{className:'btn btn-ghost btn-sm',style:{marginTop:8},onClick:reabrirEnvios},
+                  '↺ Marcar todos como pendientes')),
+
+          h('button',{className:'btn btn-ghost',style:{width:'100%',marginBottom:12},onClick:reiniciar},
+            '🗑️ Reiniciar lista'),
+
+          // Lista completa (revisión / envío puntual)
+          h('div',{className:'patient-list'},
+            contactos.map(c=>{
+              const env=!!enviados[c.wa];
+              const esSig=siguiente&&c.wa===siguiente.wa;
+              return h('div',{key:c.wa,className:'patient-row',
+                style:{alignItems:'center',cursor:'default',opacity:env?0.55:1,
+                  border:esSig?'1.5px solid #25D366':'none',borderRadius:esSig?10:0}},
+                h('div',{className:'p-info',style:{minWidth:0}},
+                  h('div',{className:'p-name'},c.nombre||'Sin nombre'),
+                  h('div',{className:'p-sub'},c.display)),
+                h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+                  env
+                    ? h('span',{style:{color:'#1E8449',fontWeight:700,fontSize:12}},'✓ Enviado')
+                    : h('button',{onClick:()=>enviar(c),
+                        style:{background:'#25D366',color:'#fff',border:'none',borderRadius:8,
+                          padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}},
+                        '💬 Enviar'),
+                  h('button',{onClick:()=>quitar(c.wa),title:'Quitar',
+                    style:{background:'none',border:'none',color:'#C00000',fontSize:16,cursor:'pointer'}},'×'))
+              );
+            }))
+        )
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  SISTEMA DE SYNC — Google Sheets + Roles de Usuario
 // ═══════════════════════════════════════════════════════════════════════
 // APP SHELL
@@ -6160,6 +6486,7 @@ function App(){
     ficha: selPatient?.nombre?.split(' ').slice(0,2).join(' ')||'Ficha',
     alertas:'Alertas', exportar:'Exportar Excel', config:'Configuración',
     control:'🎛️ Control Maestro', citaciones:'Citaciones',
+    difusion:'Difusión WhatsApp',
   };
 
   const navItems = [
@@ -6168,6 +6495,7 @@ function App(){
     {id:'alertas',  icon:'🚨', label:'Alertas', dot:alertCount>0},
     {id:'lista',    icon:'📋', label:'Lista'},
     {id:'citaciones',icon:'📞', label:'Citas'},
+    {id:'difusion', icon:'📢', label:'Difusión'},
     {id:'rayen',    icon:'🏥', label:'RAYEN'},
     {id:'rutinas',  icon:'📚', label:'Rutinas'},
     {id:'agenda',   icon:'📅', label:'Agenda'},
@@ -6226,7 +6554,7 @@ function App(){
     ),
 
     // Contenido
-    !hasData && view!=='config'
+    !hasData && view!=='config' && view!=='difusion'
       ? React.createElement('div',{className:'page',style:{textAlign:'center',paddingTop:50}},
           React.createElement('div',{style:{fontSize:64,marginBottom:16}},'🏃'),
           React.createElement('h2',{style:{fontWeight:900,fontSize:22,marginBottom:8}},'MAS AMA'),
@@ -6242,6 +6570,7 @@ function App(){
       : view==='ficha'     ? React.createElement(ViewFicha,{patient:selPatient,patients,setPatients,toast,attendanceLog})
       : view==='alertas'   ? React.createElement(ViewAlertas,{patients:visiblePatients,onPatient:openPatient})
       : view==='citaciones'? React.createElement(ViewCitaciones,{patients:visiblePatients,toast})
+      : view==='difusion'  ? React.createElement(ViewDifusion,{patients:visiblePatients,toast})
       : view==='exportar'  ? React.createElement(ViewExportar,{patients,attendanceLog,toast})
       : view==='rayen'     ? React.createElement(ViewRayen,{patients:visiblePatients,attendanceLog,toast})
       : view==='rutinas'   ? React.createElement(currentUser?.tipoRutinas==='cognitivo'?ViewRutinasCognitivas:ViewRutinas,{sessionLog,setSessionLog:setSL,toast})
